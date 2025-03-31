@@ -109,15 +109,18 @@ def create_wp_user(user_data):
         conn.close()
 
 def parse_user_xml(xml_data):
-
     try:
         root = ET.fromstring(xml_data)
         business = root.find('Business')
         
+        # Convert ISO timestamp to MySQL datetime format
+        action_time = root.find('TimeOfAction').text
+        mysql_datetime = datetime.fromisoformat(action_time.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+        
         return {
             'action_type': root.find('ActionType').text,
             'user_id': root.find('UserID').text,
-            'action_time': root.find('TimeOfAction').text,
+            'action_time': mysql_datetime,  # Now in correct format
             'first_name': root.find('FirstName').text if root.find('FirstName') is not None else '',
             'last_name': root.find('LastName').text if root.find('LastName') is not None else '',
             'phone': root.find('PhoneNumber').text if root.find('PhoneNumber') is not None else '',
