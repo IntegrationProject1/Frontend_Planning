@@ -1,4 +1,3 @@
-# user-update-consumer/app.py
 import pika
 import os
 import logging
