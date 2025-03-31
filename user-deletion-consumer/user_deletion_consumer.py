@@ -22,43 +22,44 @@ def get_db_connection():
         raise
 
 def delete_wordpress_user(email):
-    conn = None
-    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # First get the user ID
-        cursor.execute("SELECT ID FROM wp_users WHERE user_email = %s", (email,))
+        logger.debug(f"Checking for user with email: {email}")
+        cursor.execute("SELECT ID, user_email FROM wp_users WHERE user_email = %s", (email,))
         user = cursor.fetchone()
         
         if not user:
-            logger.warning(f"User with email {email} not found - nothing to delete")
+            logger.warning(f"No user found with email: {email}")
             return False
             
-        user_id = user['ID']
+        logger.debug(f"Found user: ID={user['ID']}, Email={user['user_email']}")
         
-        # Delete from wp_usermeta first (foreign key constraint)
-        cursor.execute("DELETE FROM wp_usermeta WHERE user_id = %s", (user_id,))
+        # Count existing meta entries
+        cursor.execute("SELECT COUNT(*) as meta_count FROM wp_usermeta WHERE user_id = %s", (user['ID'],))
+        meta_count = cursor.fetchone()['meta_count']
+        logger.debug(f"Found {meta_count} meta entries to delete")
         
-        # Then delete from wp_users
-        cursor.execute("DELETE FROM wp_users WHERE ID = %s", (user_id,))
-        
+        # Perform deletion
+        cursor.execute("DELETE FROM wp_usermeta WHERE user_id = %s", (user['ID'],))
+        cursor.execute("DELETE FROM wp_users WHERE ID = %s", (user['ID'],))
         conn.commit()
-        logger.info(f"Deleted WordPress user with email: {email} (ID: {user_id})")
+        
+        logger.info(f"Deleted user ID {user['ID']} ({email}) with {meta_count} meta entries")
         return True
         
     except Exception as e:
-        logger.error(f"Deletion failed: {e}")
+        logger.error(f"Deletion error: {str(e)}", exc_info=True)
         if conn:
             conn.rollback()
         raise
     finally:
         if cursor:
             cursor.close()
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
-
+            
 def parse_xml_message(xml_data):
     try:
         root = ET.fromstring(xml_data)
@@ -79,15 +80,31 @@ def parse_xml_message(xml_data):
 
 def on_message(channel, method, properties, body):
     try:
-        logger.info(f"Received deletion message from {method.routing_key}")
+        logger.info(f"Raw message received: {body.decode()}")
         
-        email = parse_xml_message(body.decode())
-        delete_wordpress_user(email)
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        xml_data = body.decode()
+        root = ET.fromstring(xml_data)
+        logger.debug(f"XML parsed: {ET.tostring(root, encoding='unicode')}")
+        
+        email = root.find('EmailAddress').text
+        action_type = root.find('ActionType').text
+        
+        if action_type.upper() != 'DELETE':
+            logger.warning(f"Ignoring non-DELETE action: {action_type}")
+            channel.basic_ack(method.delivery_tag)
+            return
+            
+        logger.info(f"Attempting to delete user with email: {email}")
+        if delete_wordpress_user(email):
+            logger.info(f"Successfully processed deletion for {email}")
+        else:
+            logger.warning(f"No user found with email: {email}")
+            
+        channel.basic_ack(method.delivery_tag)
         
     except Exception as e:
-        logger.error(f"Message processing failed: {e}")
-        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+        logger.error(f"Message processing failed: {str(e)}", exc_info=True)
+        channel.basic_nack(method.delivery_tag, requeue=False)
 
 def start_consumer():
     connection = pika.BlockingConnection(pika.ConnectionParameters(
