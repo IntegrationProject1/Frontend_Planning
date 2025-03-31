@@ -21,7 +21,7 @@ services:
     ports:
       - "30010:80"
     environment:
-      DB_HOST: mysql
+      DB_HOST: db
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
@@ -37,7 +37,7 @@ services:
     image: phpmyadmin/phpmyadmin:latest
     container_name: frontend_phpmyadmin
     environment:
-      PMA_HOST: mysql
+      PMA_HOST: db
       PMA_USER: ${DB_USER}
       PMA_PASSWORD: ${DB_PASSWORD}
     ports:
