@@ -28,7 +28,7 @@ def delete_wordpress_user(email):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get user ID
+        # First verify user exists
         cursor.execute("SELECT ID FROM wp_users WHERE user_email = %s", (email,))
         user = cursor.fetchone()
         
@@ -38,70 +38,62 @@ def delete_wordpress_user(email):
             
         user_id = user['ID']
         
-        # Delete user meta
+        # Delete from wp_usermeta first (to maintain referential integrity)
         cursor.execute("DELETE FROM wp_usermeta WHERE user_id = %s", (user_id,))
-        # Delete user
+        
+        # Then delete from wp_users
         cursor.execute("DELETE FROM wp_users WHERE ID = %s", (user_id,))
         
         conn.commit()
-        logger.info(f"Deleted user ID {user_id} ({email})")
+        logger.info(f"Deleted WordPress user: {email} (ID: {user_id})")
         return True
         
     except Exception as e:
-        logger.error(f"Deletion failed for {email}: {str(e)}")
+        logger.error(f"Deletion failed for {email}: {e}")
         if conn:
             conn.rollback()
         raise
     finally:
         if cursor:
             cursor.close()
-        if conn:
+        if conn and conn.is_connected():
             conn.close()
 
-def parse_xml_message(xml_data):
+def parse_user_xml(xml_data):
     try:
         root = ET.fromstring(xml_data)
-        email = root.find('Email').text  # Directly access the Email tag
-        action_type = root.find('ActionType').text
         
-        if not email:
-            raise ValueError("Email is empty")
-            
-        if action_type.upper() != 'DELETE':
-            raise ValueError(f"Ignoring non-DELETE action: {action_type}")
-            
-        return email
+        # Extract required fields
+        user_data = {
+            'action_type': root.find('ActionType').text,
+            'email': root.find('Email').text  # Changed from EmailAddress to Email
+        }
         
+        return user_data
     except Exception as e:
-        logger.error(f"XML parsing failed. Error: {str(e)}\nXML Content: {xml_data}")
+        logger.error(f"XML parsing failed: {e}\nXML Content: {xml_data}")
         raise
 
 def on_message(channel, method, properties, body):
     try:
-        logger.info(f"Received deletion message from {method.routing_key}")
-        xml_data = body.decode()
+        logger.info(f"Received message from {method.routing_key}")
         
-        # Direct parsing without over-engineering
-        root = ET.fromstring(xml_data)
-        email = root.find('Email').text
-        action_type = root.find('ActionType').text
+        user_data = parse_user_xml(body.decode())
         
-        if action_type.upper() != 'DELETE':
-            logger.warning(f"Ignoring non-DELETE action: {action_type}")
+        if user_data['action_type'].upper() != 'DELETE':
+            logger.warning(f"Ignoring non-DELETE action: {user_data['action_type']}")
             channel.basic_ack(method.delivery_tag)
             return
             
-        logger.info(f"Processing deletion for: {email}")
-        
-        if delete_wordpress_user(email):
-            logger.info(f"Successfully deleted user: {email}")
+        if delete_wordpress_user(user_data['email']):
+            logger.info(f"Successfully processed deletion for {user_data['email']}")
         else:
-            logger.warning(f"User not found: {email}")
+            logger.warning(f"No user found to delete: {user_data['email']}")
             
         channel.basic_ack(method.delivery_tag)
         
     except Exception as e:
-        logger.error(f"Failed to process message: {str(e)}\nRaw message: {body.decode()}")
+        logger.error(f"Message processing failed: {e}\nRaw message: {body.decode()}")
         channel.basic_nack(method.delivery_tag, requeue=False)
 
 def start_consumer():
@@ -125,17 +117,17 @@ def start_consumer():
                 auto_ack=False
             )
         
-        logger.info(f"Listening for deletion messages on queues: {', '.join(queues)}")
+        logger.info(f"Listening on queues: {', '.join(queues)}")
         channel.start_consuming()
         
     except KeyboardInterrupt:
         logger.info("Stopping consumer...")
         channel.stop_consuming()
-        connection.close()
-        logger.info("Consumer stopped.")
     except Exception as e:
         logger.error(f"Consumer failed: {e}")
         raise
+    finally:
+        connection.close()
 
 if __name__ == "__main__":
     start_consumer()
