@@ -59,15 +59,21 @@ def delete_wordpress_user(email):
             cursor.close()
         if conn:
             conn.close()
-            
+
 def parse_xml_message(xml_data):
     try:
         root = ET.fromstring(xml_data)
-        email = root.find('EmailAddress').text  # Changed to match your XML schema
+        
+        # Try both possible email field names
+        email_element = root.find('EmailAddress') or root.find('Email')
+        if not email_element:
+            raise ValueError("No email field found in XML (tried both EmailAddress and Email)")
+            
+        email = email_element.text
         action_type = root.find('ActionType').text
         
         if not email:
-            raise ValueError("EmailAddress is required in the XML message")
+            raise ValueError("Email is empty")
             
         if action_type.upper() != 'DELETE':
             raise ValueError(f"Ignoring non-DELETE action: {action_type}")
@@ -75,35 +81,27 @@ def parse_xml_message(xml_data):
         return email
         
     except Exception as e:
-        logger.error(f"XML parsing failed: {e}")
+        logger.error(f"XML parsing failed: {e}\nXML Content: {xml_data}")
         raise
 
 def on_message(channel, method, properties, body):
     try:
-        logger.info(f"Raw message received: {body.decode()}")
-        
+        logger.info(f"Received message from {method.routing_key}")
         xml_data = body.decode()
-        root = ET.fromstring(xml_data)
-        logger.debug(f"XML parsed: {ET.tostring(root, encoding='unicode')}")
+        logger.debug(f"Raw XML: {xml_data}")
         
-        email = root.find('EmailAddress').text
-        action_type = root.find('ActionType').text
+        email = parse_xml_message(xml_data)
+        logger.info(f"Processing deletion for email: {email}")
         
-        if action_type.upper() != 'DELETE':
-            logger.warning(f"Ignoring non-DELETE action: {action_type}")
-            channel.basic_ack(method.delivery_tag)
-            return
-            
-        logger.info(f"Attempting to delete user with email: {email}")
         if delete_wordpress_user(email):
-            logger.info(f"Successfully processed deletion for {email}")
+            logger.info(f"Successfully deleted user: {email}")
         else:
             logger.warning(f"No user found with email: {email}")
             
         channel.basic_ack(method.delivery_tag)
         
     except Exception as e:
-        logger.error(f"Message processing failed: {str(e)}", exc_info=True)
+        logger.error(f"Processing failed: {str(e)}", exc_info=True)
         channel.basic_nack(method.delivery_tag, requeue=False)
 
 def start_consumer():
