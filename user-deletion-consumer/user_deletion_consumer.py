@@ -22,35 +22,33 @@ def get_db_connection():
         raise
 
 def delete_wordpress_user(email):
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        logger.debug(f"Checking for user with email: {email}")
-        cursor.execute("SELECT ID, user_email FROM wp_users WHERE user_email = %s", (email,))
+        # Get user ID
+        cursor.execute("SELECT ID FROM wp_users WHERE user_email = %s", (email,))
         user = cursor.fetchone()
         
         if not user:
             logger.warning(f"No user found with email: {email}")
             return False
             
-        logger.debug(f"Found user: ID={user['ID']}, Email={user['user_email']}")
+        user_id = user['ID']
         
-        # Count existing meta entries
-        cursor.execute("SELECT COUNT(*) as meta_count FROM wp_usermeta WHERE user_id = %s", (user['ID'],))
-        meta_count = cursor.fetchone()['meta_count']
-        logger.debug(f"Found {meta_count} meta entries to delete")
+        # Delete user meta
+        cursor.execute("DELETE FROM wp_usermeta WHERE user_id = %s", (user_id,))
+        # Delete user
+        cursor.execute("DELETE FROM wp_users WHERE ID = %s", (user_id,))
         
-        # Perform deletion
-        cursor.execute("DELETE FROM wp_usermeta WHERE user_id = %s", (user['ID'],))
-        cursor.execute("DELETE FROM wp_users WHERE ID = %s", (user['ID'],))
         conn.commit()
-        
-        logger.info(f"Deleted user ID {user['ID']} ({email}) with {meta_count} meta entries")
+        logger.info(f"Deleted user ID {user_id} ({email})")
         return True
         
     except Exception as e:
-        logger.error(f"Deletion error: {str(e)}", exc_info=True)
+        logger.error(f"Deletion failed for {email}: {str(e)}")
         if conn:
             conn.rollback()
         raise
@@ -63,55 +61,47 @@ def delete_wordpress_user(email):
 def parse_xml_message(xml_data):
     try:
         root = ET.fromstring(xml_data)
+        email = root.find('Email').text  # Directly access the Email tag
+        action_type = root.find('ActionType').text
         
-        # Debug: Print the entire XML structure
-        logger.debug(f"Full XML structure: {ET.tostring(root, encoding='unicode')}")
-        
-        # Find email using more flexible approach
-        email = None
-        for possible_tag in ['Email', 'EmailAddress', 'email', 'email_address']:
-            element = root.find(possible_tag)
-            if element is not None and element.text:
-                email = element.text.strip()
-                break
-                
         if not email:
-            raise ValueError(f"No valid email field found in XML. Tried: Email, EmailAddress, email, email_address")
+            raise ValueError("Email is empty")
             
-        # Verify action type
-        action_type_element = root.find('ActionType')
-        if not action_type_element:
-            raise ValueError("No ActionType field found in XML")
-            
-        action_type = action_type_element.text.strip().upper()
-        if action_type != 'DELETE':
-            raise ValueError(f"Invalid action type: {action_type} (expected DELETE)")
+        if action_type.upper() != 'DELETE':
+            raise ValueError(f"Ignoring non-DELETE action: {action_type}")
             
         return email
         
     except Exception as e:
-        logger.error(f"XML parsing failed. Original message: {xml_data}")
-        raise ValueError(f"XML parsing error: {str(e)}")
+        logger.error(f"XML parsing failed. Error: {str(e)}\nXML Content: {xml_data}")
+        raise
 
 def on_message(channel, method, properties, body):
     try:
-        logger.info(f"Received message from {method.routing_key}")
+        logger.info(f"Received deletion message from {method.routing_key}")
         xml_data = body.decode()
         
-        try:
-            email = parse_xml_message(xml_data)
-            if delete_wordpress_user(email):
-                logger.info(f"Successfully processed deletion for {email}")
-            else:
-                logger.warning(f"No user found with email: {email}")
+        # Direct parsing without over-engineering
+        root = ET.fromstring(xml_data)
+        email = root.find('Email').text
+        action_type = root.find('ActionType').text
+        
+        if action_type.upper() != 'DELETE':
+            logger.warning(f"Ignoring non-DELETE action: {action_type}")
             channel.basic_ack(method.delivery_tag)
+            return
             
-        except ValueError as e:
-            logger.error(f"Invalid message format: {e}\nMessage: {xml_data}")
-            channel.basic_nack(method.delivery_tag, requeue=False)
+        logger.info(f"Processing deletion for: {email}")
+        
+        if delete_wordpress_user(email):
+            logger.info(f"Successfully deleted user: {email}")
+        else:
+            logger.warning(f"User not found: {email}")
             
+        channel.basic_ack(method.delivery_tag)
+        
     except Exception as e:
-        logger.error(f"Unexpected processing error: {str(e)}", exc_info=True)
+        logger.error(f"Failed to process message: {str(e)}\nRaw message: {body.decode()}")
         channel.basic_nack(method.delivery_tag, requeue=False)
 
 def start_consumer():
