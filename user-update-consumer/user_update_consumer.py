@@ -23,7 +23,7 @@ def get_db_connection():
         raise
 
 # Get current WordPress user data
-def get_current_user_data(user_id):
+def get_current_user_data(email):
     conn = None
     cursor = None
     try:
@@ -32,12 +32,12 @@ def get_current_user_data(user_id):
         
         cursor.execute("""
             SELECT * FROM wp_users 
-            WHERE ID = %s
-        """, (user_id,))
+            WHERE user_email = %s
+        """, (email,))
         
         result = cursor.fetchone()
         if not result:
-            raise ValueError(f"No user found with ID: {user_id}")
+            raise ValueError(f"No user found with email: {email}")
             
         return result
         
@@ -50,17 +50,17 @@ def get_current_user_data(user_id):
         if conn and conn.is_connected():
             conn.close()
 
-# Update WordPress user
+# Update WordPress user data 
 def update_user(user_data):
     conn = None
     cursor = None
     try:
-        # Get current data
-        current_data = get_current_user_data(user_data['UserID'])
+        if not user_data.get('EmailAddress'):
+            raise ValueError("EmailAddress is required for update")
+            
+        current_data = get_current_user_data(user_data['EmailAddress'])
         
-        # Prepare update data
         update_fields = {
-            'user_email': user_data.get('EmailAddress') or current_data.get('user_email'),
             'first_name': user_data.get('FirstName') or current_data.get('first_name'),
             'last_name': user_data.get('LastName') or current_data.get('last_name'),
             'phone_number': user_data.get('PhoneNumber') or current_data.get('phone_number'),
@@ -68,7 +68,6 @@ def update_user(user_data):
             'action_type': 'UPDATE'
         }
         
-        # Handle business data if present
         business = user_data.get('Business')
         if business:
             update_fields.update({
@@ -82,31 +81,24 @@ def update_user(user_data):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Build the update query dynamically based on provided fields
         set_clauses = []
         values = []
-        
         for field, value in update_fields.items():
-            if value is not None:  # Only update fields that have values
+            if value is not None:
                 set_clauses.append(f"{field} = %s")
                 values.append(value)
         
-        if not set_clauses:
-            logger.warning("No fields to update")
-            return False
-            
-        # Add UserID for WHERE clause
-        values.append(user_data['UserID'])
+        values.append(user_data['EmailAddress'])
         
         update_query = f"""
         UPDATE wp_users SET
             {', '.join(set_clauses)}
-        WHERE ID = %s
+        WHERE user_email = %s
         """
         
         cursor.execute(update_query, tuple(values))
         conn.commit()
-        logger.info(f"Updated WordPress user ID: {user_data['UserID']}")
+        logger.info(f"Updated WordPress user with email: {user_data['EmailAddress']}")
         return True
         
     except Exception as e:
