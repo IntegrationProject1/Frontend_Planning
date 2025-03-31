@@ -64,44 +64,54 @@ def parse_xml_message(xml_data):
     try:
         root = ET.fromstring(xml_data)
         
-        # Try both possible email field names
-        email_element = root.find('EmailAddress') or root.find('Email')
-        if not email_element:
-            raise ValueError("No email field found in XML (tried both EmailAddress and Email)")
-            
-        email = email_element.text
-        action_type = root.find('ActionType').text
+        # Debug: Print the entire XML structure
+        logger.debug(f"Full XML structure: {ET.tostring(root, encoding='unicode')}")
         
+        # Find email using more flexible approach
+        email = None
+        for possible_tag in ['Email', 'EmailAddress', 'email', 'email_address']:
+            element = root.find(possible_tag)
+            if element is not None and element.text:
+                email = element.text.strip()
+                break
+                
         if not email:
-            raise ValueError("Email is empty")
+            raise ValueError(f"No valid email field found in XML. Tried: Email, EmailAddress, email, email_address")
             
-        if action_type.upper() != 'DELETE':
-            raise ValueError(f"Ignoring non-DELETE action: {action_type}")
+        # Verify action type
+        action_type_element = root.find('ActionType')
+        if not action_type_element:
+            raise ValueError("No ActionType field found in XML")
+            
+        action_type = action_type_element.text.strip().upper()
+        if action_type != 'DELETE':
+            raise ValueError(f"Invalid action type: {action_type} (expected DELETE)")
             
         return email
         
     except Exception as e:
-        logger.error(f"XML parsing failed: {e}\nXML Content: {xml_data}")
-        raise
+        logger.error(f"XML parsing failed. Original message: {xml_data}")
+        raise ValueError(f"XML parsing error: {str(e)}")
 
 def on_message(channel, method, properties, body):
     try:
         logger.info(f"Received message from {method.routing_key}")
         xml_data = body.decode()
-        logger.debug(f"Raw XML: {xml_data}")
         
-        email = parse_xml_message(xml_data)
-        logger.info(f"Processing deletion for email: {email}")
-        
-        if delete_wordpress_user(email):
-            logger.info(f"Successfully deleted user: {email}")
-        else:
-            logger.warning(f"No user found with email: {email}")
+        try:
+            email = parse_xml_message(xml_data)
+            if delete_wordpress_user(email):
+                logger.info(f"Successfully processed deletion for {email}")
+            else:
+                logger.warning(f"No user found with email: {email}")
+            channel.basic_ack(method.delivery_tag)
             
-        channel.basic_ack(method.delivery_tag)
-        
+        except ValueError as e:
+            logger.error(f"Invalid message format: {e}\nMessage: {xml_data}")
+            channel.basic_nack(method.delivery_tag, requeue=False)
+            
     except Exception as e:
-        logger.error(f"Processing failed: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected processing error: {str(e)}", exc_info=True)
         channel.basic_nack(method.delivery_tag, requeue=False)
 
 def start_consumer():
