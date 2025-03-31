@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: frontend_db
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_FRONTEND_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_FRONTEND_DATABASE}
+      - MYSQL_USER=${MYSQL_FRONTEND_USER}
+      - MYSQL_PASSWORD=${MYSQL_FRONTEND_PASSWORD}
+    volumes:
+      - frontend_db_data:/var/lib/mysql
+    restart: always
+
+  wordpress:
+    image: wordpress:latest
+    container_name: frontend_wordpress
+    ports:
+      - "30010:80"
+    environment:
+      - WORDPRESS_DB_HOST=${WORDPRESS_FRONTEND_DB_HOST}
+      - WORDPRESS_DB_USER=${WORDPRESS_FRONTEND_DB_USER}
+      - WORDPRESS_DB_PASSWORD=${WORDPRESS_FRONTEND_DB_PASSWORD}
+      - WORDPRESS_DB_NAME=${WORDPRESS_FRONTEND_DB_NAME}
+    depends_on:
+      - db
+    volumes:
+      - wordpress_data:/var/www/html
+    restart: always
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: frontend_phpmyadmin
+    environment:
+      - PMA_HOST=${PMA_FRONTEND_HOST}
+      - PMA_USER=${PMA_FRONTEND_USER}
+      - PMA_PASSWORD=${PMA_FRONTEND_PASSWORD}
+    ports:
+      - "30011:80"
+    depends_on:
+      - db
+    restart: always
+
+volumes:
+  frontend_db_data:
+  wordpress_data:
+

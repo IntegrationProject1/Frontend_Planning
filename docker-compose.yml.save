@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: frontend_db
+    environment:
+      - MYSQL_ROOT_PASSWORD=HeyMySQL2709!
+      - MYSQL_DATABASE=frontend
+      - MYSQL_USER=admin
+      - MYSQL_PASSWORD=HeyMySQL2025!
+    volumes:
+      - frontend_db_data:/var/lib/mysql
+restart: always
+
+  wordpress:
+    image: wordpress:latest
+    container_name: frontend_wordpress
+    ports:
+      - "30010:80"
+    environment:
+      - WORDPRESS_DB_HOST=db
+      - WORDPRESS_DB_USER=admin
+      - WORDPRESS_DB_PASSWORD=HeyMySQL2025!
+      - WORDPRESS_DB_NAME=frontend
+    depends_on:
+      - db
+    volumes:
+      - wordpress_data:/var/www/html
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: frontend_phpmyadmin
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=admin
+      - PMA_PASSWORD=HeyMySQL2025!
+    ports:
+      - "30011:80"
+    depends_on:
+      - db
+
+volumes:
+  frontend_db_data:
+  wordpress_data:
