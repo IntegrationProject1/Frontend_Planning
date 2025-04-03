@@ -5,13 +5,15 @@ services:
     image: mysql:8.0
     container_name: frontend_db
     environment:
-      - MYSQL_ROOT_PASSWORD=HeyMySQL2709!
-      - MYSQL_DATABASE=frontend
-      - MYSQL_USER=admin
-      - MYSQL_PASSWORD=HeyMySQL2025!
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - frontend_db_data:/var/lib/mysql
-restart: always
+    restart: always
+    networks:
+      - frontend_network
 
   wordpress:
     image: wordpress:latest
@@ -19,27 +21,67 @@ restart: always
     ports:
       - "30010:80"
     environment:
-      - WORDPRESS_DB_HOST=db
-      - WORDPRESS_DB_USER=admin
-      - WORDPRESS_DB_PASSWORD=HeyMySQL2025!
-      - WORDPRESS_DB_NAME=frontend
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+      WORDPRESS_DB_NAME: ${DB_NAME}
     depends_on:
       - db
     volumes:
-      - wordpress_data:/var/www/html
+      - ./wordpress/wp-content:/var/www/html/wp-content
+    restart: always
+    networks:
+      - frontend_network
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin:latest
     container_name: frontend_phpmyadmin
     environment:
-      - PMA_HOST=db
-      - PMA_USER=admin
-      - PMA_PASSWORD=HeyMySQL2025!
+      PMA_HOST: db
+      PMA_USER: ${DB_USER}
+      PMA_PASSWORD: ${DB_PASSWORD}
     ports:
       - "30011:80"
     depends_on:
       - db
+    restart: always
+    networks:
+      - frontend_network
+
+  user-deletion-consumer:
+    build: ./user-deletion-consumer
+    container_name: frontend_deletion_consumer
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+    networks:
+      - frontend_network
+
+  user-creation-consumer:
+    build: ./user-creation-consumer
+    container_name: frontend_creation_consumer
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+    networks:
+      - frontend_network
+
+  user-update-consumer:
+    build: ./user-update-consumer
+    container_name: frontend_update_consumer
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+    networks:
+      - frontend_network
+
+networks:
+  frontend_network:
+    name: frontend_network
+    driver: bridge
 
 volumes:
   frontend_db_data:
-  wordpress_data:
