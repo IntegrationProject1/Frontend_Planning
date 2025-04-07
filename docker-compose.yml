@@ -25,10 +25,14 @@ services:
       WORDPRESS_DB_USER: ${DB_USER}
       WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
       WORDPRESS_DB_NAME: ${DB_NAME}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     depends_on:
       - db
     volumes:
-      - wordpress_data:/var/www/html
+      - ./wordpress/wp-content:/var/www/html/wp-content
     restart: always
     networks:
       - frontend_network
@@ -85,4 +89,3 @@ networks:
 
 volumes:
   frontend_db_data:
-  wordpress_data:
