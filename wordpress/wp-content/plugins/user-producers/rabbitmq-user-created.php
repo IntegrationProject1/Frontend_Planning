@@ -15,8 +15,9 @@ use PhpAmqpLib\Message\AMQPMessage;
 
 // Functie om gebruikersgegevens naar RabbitMQ te sturen bij profielupdate
 function send_user_to_rabbitmq_on_profile_update($user_id) {
-    // Controleer of dit een nieuwe gebruiker is door te kijken of de UUID al bestaat
-    $is_new_user = get_user_meta($user_id, 'UUID', true) ? false : true;
+    // Controleer of dit een nieuwe gebruiker is door te kijken of de dateTime UUID al bestaat
+    $existing_uuid = get_user_meta($user_id, 'UUID', true);
+    $is_new_user = empty($existing_uuid);
 
     if (!$is_new_user) {
         return; // Als het geen nieuwe gebruiker is, stoppen we hier
@@ -28,17 +29,20 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
         $first_name = get_user_meta($user_id, 'first_name', true);
         $last_name = get_user_meta($user_id, 'last_name', true);
         $phone_number = get_user_meta($user_id, 'phone_number', true);
-	$password = $user_info->user_pass;
+        $password = $user_info->user_pass;
         $btw_number = get_user_meta($user_id, 'btw_number', true);
         $business_name = get_user_meta($user_id, 'business_name', true);
         $business_email = get_user_meta($user_id, 'business_email', true);
         $real_address = get_user_meta($user_id, 'real_address', true);
         $facturation_address = get_user_meta($user_id, 'facturation_address', true);
 
+        // Genereer een dateTime UUID met milliseconden precisie
+        $uuid = (new DateTime())->format('Y-m-d\TH:i:s.u\Z');
+
         // Maak een XML van de gebruikersgegevens
         $xml = new SimpleXMLElement('<UserMessage/>');
         $xml->addChild('ActionType', 'CREATE');
-        $xml->addChild('UUID', $user_id);
+        $xml->addChild('UUID', $uuid); // Gebruik de dateTime UUID
         $xml->addChild('EncryptedPassword', $password);
         $xml->addChild('TimeOfAction', gmdate('Y-m-d\TH:i:s\Z'));
         $xml->addChild('FirstName', $first_name);
@@ -91,10 +95,10 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
             error_log(" [x] User data sent to {$queue['name']} with routing key {$queue['routing_key']}");
         }
 
-        // Sla de UUID op als user meta
-        update_user_meta($user_id, 'UUID', $user_id);
+        // Sla de dateTime UUID op als user meta
+        update_user_meta($user_id, 'UUID', $uuid);
 
-        error_log(' [x] User data sent to all queues. UUID saved as: ' . $user_id);
+        error_log(' [x] User data sent to all queues. UUID saved as: ' . $uuid);
 
         // Sluit de verbinding
         $channel->close();
