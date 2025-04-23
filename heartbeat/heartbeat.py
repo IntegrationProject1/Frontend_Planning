@@ -2,54 +2,44 @@ import pika
 import os
 import logging
 import time
+
 from datetime import datetime
 
+# Logger setup
 logger = logging.getLogger("HeartbeatLogger")
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
 
+# RabbitMQ settings
 MQ_SERVER = 'rabbitmq'
 MQ_PORT = 5672
 MQ_USER = os.getenv('MQ_USER', 'guest')
 MQ_PASS = os.getenv('MQ_PASS', 'guest')
 MQ_VHOST = '/'
 
+# Heartbeat settings
 SERVICE_ID = 'frontend_heartbeat'
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'heartbeat_service')
 EXCHANGE = 'monitoring'
 QUEUE = 'heartbeat_queue'
 ROUTING = 'heartbeat.event'
 
+# XML message formatter conform XSD
 def dict_to_xml(log):
-    xml = """
+    return f"""
     <Heartbeat>
-        <ServiceName>{ServiceName}</ServiceName>
-        <Status>{Status}</Status>
-        <Timestamp>{Timestamp}</Timestamp>
-        <HeartBeatInterval>{HeartBeatInterval}</HeartBeatInterval>
-        <Metadata>
-            <Version>{Version}</Version>
-            <Host>{Host}</Host>
-            <Environment>{Environment}</Environment>
-        </Metadata>
+        <ServiceName>{log['ServiceName']}</ServiceName>
     </Heartbeat>
-    """.format(**log)
-    return xml.strip()
+    """.strip()
 
 def get_heartbeat_message():
-    heartbeat_data = {
-        'ServiceName': SERVICE_ID,
-        'Status': 'OK',
-        'Timestamp': datetime.now().isoformat(),
-        'HeartBeatInterval': '5',
-        'Version': '1.0.0',
-        'Host': INSTANCE_NAME,
-        'Environment': os.getenv('ENVIRONMENT', 'development')
-    }
-    return dict_to_xml(heartbeat_data)
+    return dict_to_xml({
+        'ServiceName': SERVICE_ID
+    })
 
+# RabbitMQ connectie met retries
 def setup_rabbitmq_channel():
     max_retries = 10
     retry_delay = 5
@@ -73,6 +63,7 @@ def setup_rabbitmq_channel():
             else:
                 raise
 
+# Heartbeat loop
 def run_heartbeat():
     connection, channel = setup_rabbitmq_channel()
     
@@ -87,7 +78,7 @@ def run_heartbeat():
                 properties=pika.BasicProperties(delivery_mode=2)
             )
             logger.info("Heartbeat-bericht verzonden naar monitoring")
-            time.sleep(5)
+            time.sleep(1)  
     except KeyboardInterrupt:
         logger.warning("Heartbeat-service gestopt door gebruiker")
     except Exception as error:
@@ -95,6 +86,7 @@ def run_heartbeat():
     finally:
         logger.info("Verbinding met RabbitMQ wordt gesloten")
         connection.close()
+
 
 def start():
     logger.info("Initialiseren van de heartbeat-service...")
