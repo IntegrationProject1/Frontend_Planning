@@ -52,36 +52,6 @@ services:
     networks:
       - frontend_network
 
-  user-deletion-consumer:
-    build: ./user-deletion-consumer
-    container_name: frontend_deletion_consumer
-    restart: unless-stopped
-    env_file: .env
-    depends_on:
-      - db
-    networks:
-      - frontend_network
-
-  user-creation-consumer:
-    build: ./user-creation-consumer
-    container_name: frontend_creation_consumer
-    restart: unless-stopped
-    env_file: .env
-    depends_on:
-      - db
-    networks:
-      - frontend_network
-
-  user-update-consumer:
-    build: ./user-update-consumer
-    container_name: frontend_update_consumer
-    restart: unless-stopped
-    env_file: .env
-    depends_on:
-      - db
-    networks:
-      - frontend_network
-
 networks:
   frontend_network:
     name: frontend_network
