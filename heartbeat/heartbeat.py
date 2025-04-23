@@ -23,8 +23,8 @@ MQ_VHOST = '/'
 SERVICE_ID = 'frontend_heartbeat'
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'heartbeat_service')
 EXCHANGE = 'monitoring'
-QUEUE = 'heartbeat_queue'
-ROUTING = 'heartbeat.event'
+QUEUE = 'controlroom.heartbeat.ping'
+# ROUTING = 'controlroom.heartbeat.ping'
 
 # XML message formatter conform XSD
 def dict_to_xml(log):
