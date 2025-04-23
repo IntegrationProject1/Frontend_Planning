@@ -52,6 +52,22 @@ services:
     networks:
       - frontend_network
 
+heartbeat:
+    build:
+      context: ./heartbeat_service
+      dockerfile: Dockerfile
+    container_name: frontend_heartbeat
+    environment:
+      - CONTAINER_NAME=heartbeat_service
+      - ENVIRONMENT=development 
+    env_file: .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: always
+    networks:
+      - frontend_network      
+
 networks:
   frontend_network:
     name: frontend_network
