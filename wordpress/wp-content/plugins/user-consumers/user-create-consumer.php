@@ -38,20 +38,53 @@ function rabbitmq_user_create_consumer() {
 
             // Probeer de XML payload te parsen.
             $xml = simplexml_load_string($msg->body);
-            if (!$xml || (string)$xml->ActionType !== 'CREATE') {
+            if (!$xml || (string) $xml->ActionType !== 'CREATE') {
                 error_log("Ongeldig XML-bericht of geen CREATE actie.");
-                // Gebruik de delivery tag om het bericht te acken.
                 $channel->basic_ack($msg->delivery_info['delivery_tag']);
                 return;
             }
 
-            // Verkrijg de gegevens uit de XML payload.
-            $uuid          = (string)$xml->UUID;
-            $encryptedPass = (string)$xml->EncryptedPassword;
-            $email         = (string)$xml->EmailAddress;
-            $first_name    = (string)$xml->FirstName;
-            $last_name     = (string)$xml->LastName;
-            $phone_number  = (string)$xml->PhoneNumber;
+            // Parse UUID (xs:dateTime met microseconden).
+            try {
+                $dtUuid = \DateTime::createFromFormat('Y-m-d\TH:i:s.v\Z', (string) $xml->UUID);
+                if (! $dtUuid) {
+                    throw new \Exception('Format mismatch');
+                }
+                $uuidString = $dtUuid->format('Y-m-d\TH:i:s.v\Z');
+            } catch (\Exception $e) {
+                error_log("Ongeldig UUID-datumformaat: " . $e->getMessage());
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                return;
+            }
+
+            // Parse TimeOfAction (xs:dateTime).
+            try {
+                $dtAction    = new \DateTime((string) $xml->TimeOfAction);
+                $timeOfAction = $dtAction->format('Y-m-d\TH:i:s\Z');
+            } catch (\Exception $e) {
+                error_log("Ongeldig TimeOfAction-formaat: " . $e->getMessage());
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                return;
+            }
+
+            $encryptedPass = (string) $xml->EncryptedPassword;
+            $email         = (string) $xml->EmailAddress;
+            $first_name    = (string) $xml->FirstName;
+            $last_name     = (string) $xml->LastName;
+            $phone_number  = (string) $xml->PhoneNumber;
+
+            // Controleer of de gebruiker al bestaat via meta UUID.
+            $existing = get_users([
+                'meta_key'   => 'UUID',
+                'meta_value' => $uuidString,
+                'number'     => 1,
+                'fields'     => 'ID',
+            ]);
+            if (! empty($existing)) {
+                error_log("Gebruiker met deze UUID bestaat al (user_id={$existing[0]}).");
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                return;
+            }
 
             // Bouw de data array voor wp_insert_user().
             $user_data = [
@@ -59,31 +92,27 @@ function rabbitmq_user_create_consumer() {
                 'user_pass'  => $encryptedPass,
                 'user_email' => $email,
                 'first_name' => $first_name,
-                'last_name'  => $last_name
+                'last_name'  => $last_name,
             ];
 
-            // Controleer of de gebruiker al bestaat.
-                        $is_new_user = get_user_meta($user_id, 'UUID', true) ? false : true;
-                        if (!$is_new_user) {
-                                return;
-                        } else {
-                $new_user_id = wp_insert_user($user_data);
-                if (is_wp_error($new_user_id)) {
-                    error_log("Fout bij het aanmaken van de gebruiker: " . $new_user_id->get_error_message());
-                } else {
-                    error_log("Gebruiker succesvol aangemaakt met ID: " . $new_user_id);
-                    // Sla extra gegevens op als user meta.
-                    update_user_meta($new_user_id, 'UUID', $uuid);
-                    update_user_meta($new_user_id, 'phone_number', $phone_number);
+            // Maak de gebruiker aan.
+            $new_user_id = wp_insert_user($user_data);
+            if (is_wp_error($new_user_id)) {
+                error_log("Fout bij het aanmaken van de gebruiker: " . $new_user_id->get_error_message());
+            } else {
+                error_log("Gebruiker succesvol aangemaakt met ID: {$new_user_id}");
+                // Sla extra gegevens op als user meta.
+                update_user_meta($new_user_id, 'UUID',         $uuidString);
+                update_user_meta($new_user_id, 'TimeOfAction', $timeOfAction);
+                update_user_meta($new_user_id, 'phone_number', $phone_number);
 
-                    // Verwerk optioneel de business data als deze aanwezig is.
-                    if ($xml->Business) {
-                        update_user_meta($new_user_id, 'business_name', (string)$xml->Business->BusinessName);
-                        update_user_meta($new_user_id, 'business_email', (string)$xml->Business->BusinessEmail);
-                        update_user_meta($new_user_id, 'real_address', (string)$xml->Business->RealAddress);
-                        update_user_meta($new_user_id, 'btw_number', (string)$xml->Business->BTWNumber);
-                        update_user_meta($new_user_id, 'facturation_address', (string)$xml->Business->FacturationAddress);
-                    }
+                // Verwerk optioneel de business data als deze aanwezig is.
+                if ($xml->Business) {
+                    update_user_meta($new_user_id, 'business_name',       (string) $xml->Business->BusinessName);
+                    update_user_meta($new_user_id, 'business_email',      (string) $xml->Business->BusinessEmail);
+                    update_user_meta($new_user_id, 'real_address',        (string) $xml->Business->RealAddress);
+                    update_user_meta($new_user_id, 'btw_number',          (string) $xml->Business->BTWNumber);
+                    update_user_meta($new_user_id, 'facturation_address', (string) $xml->Business->FacturationAddress);
                 }
             }
 
