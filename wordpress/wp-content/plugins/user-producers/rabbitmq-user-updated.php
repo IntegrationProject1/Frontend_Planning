@@ -2,7 +2,7 @@
 /**
  * Plugin Name: RabbitMQ User Update
  * Description: Stuur alleen gewijzigde gebruikersgegevens naar RabbitMQ wanneer een gebruiker wordt bijgewerkt.
- * Version: 1.0
+ * Version: 1.1
  * Author: Youmni Malha
  */
 require_once '/var/www/html/wp-load.php';
@@ -91,11 +91,19 @@ function send_user_update_to_rabbitmq($changes) {
         }
 
         $user_id = $changes['id'];
+
+        $uuid = get_user_meta($user_id, 'UUID', true);
+
+        if (empty($uuid)) {
+            error_log(" [!] Geen UUID gevonden voor user_id: $user_id");
+            return;
+        }
+
         unset($changes['id']);
 
         $xml = new SimpleXMLElement('<UserMessage/>');
         $xml->addChild('ActionType', 'UPDATE');
-        $xml->addChild('UUID', $user_id);
+        $xml->addChild('UUID', $uuid);
         $xml->addChild('TimeOfAction', gmdate('Y-m-d\TH:i:s\Z'));
 
         $tag_mapping = get_xml_tag_mapping();
