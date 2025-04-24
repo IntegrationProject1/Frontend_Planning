@@ -49,8 +49,8 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
         $xml = new SimpleXMLElement('<UserMessage/>');
         $xml->addChild('ActionType', 'CREATE');
         $xml->addChild('UUID', $uuid); // Gebruik de dateTime UUID
-        $xml->addChild('EncryptedPassword', $password);
         $xml->addChild('TimeOfAction', gmdate('Y-m-d\TH:i:s\Z'));
+	$xml->addChild('EncryptedPassword', $password);
         $xml->addChild('FirstName', $first_name);
         $xml->addChild('LastName', $last_name);
         $xml->addChild('PhoneNumber', $phone_number);
