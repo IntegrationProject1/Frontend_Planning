@@ -3,7 +3,7 @@
  * Plugin Name: RabbitMQ User Create
  * Description: Stuur gebruikersgegevens naar RabbitMQ wanneer een gebruiker wordt aangemaakt.
  * Version: 1.0
- * Author: Youmni Malha & Rayan Haddou
+ * Author: Youmni Malha
  */
 require_once '/var/www/html/wp-load.php';
 
@@ -15,6 +15,12 @@ use PhpAmqpLib\Message\AMQPMessage;
 
 // Functie om gebruikersgegevens naar RabbitMQ te sturen bij profielupdate
 function send_user_to_rabbitmq_on_profile_update($user_id) {
+    
+    if (get_user_meta($user_id, 'synced_to_wordpress', true)) {
+        error_log(" [x] User $user_id already synced. Skipping...");
+        return;
+    }
+    
     // Controleer of dit een nieuwe gebruiker is door te kijken of de dateTime UUID al bestaat
     $existing_uuid = get_user_meta($user_id, 'UUID', true);
     $is_new_user = empty($existing_uuid);
@@ -43,8 +49,8 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
         $xml = new SimpleXMLElement('<UserMessage/>');
         $xml->addChild('ActionType', 'CREATE');
         $xml->addChild('UUID', $uuid); // Gebruik de dateTime UUID
-        $xml->addChild('EncryptedPassword', $password);
         $xml->addChild('TimeOfAction', gmdate('Y-m-d\TH:i:s\Z'));
+	$xml->addChild('EncryptedPassword', $password);
         $xml->addChild('FirstName', $first_name);
         $xml->addChild('LastName', $last_name);
         $xml->addChild('PhoneNumber', $phone_number);
@@ -99,6 +105,7 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
         update_user_meta($user_id, 'UUID', $uuid);
 
         error_log(' [x] User data sent to all queues. UUID saved as: ' . $uuid);
+        error_log(" [x] Final User XML:\n" . $xml_string);
 
         // Sluit de verbinding
         $channel->close();

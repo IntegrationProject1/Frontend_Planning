@@ -2,7 +2,7 @@
 /**
  * Plugin Name: RabbitMQ User Delete
  * Description: Stuur gebruikers-ID naar RabbitMQ wanneer een gebruiker wordt verwijderd.
- * Version: 1.0
+ * Version: 1.1
  * Author: By Youmni Malha
  */
 
@@ -17,10 +17,18 @@ use PhpAmqpLib\Message\AMQPMessage;
 // Functie om de gebruikers-ID naar RabbitMQ te sturen wanneer een gebruiker wordt verwijderd
 function send_user_delete_to_rabbitmq($user_id) {
     try {
+
+        $uuid = get_user_meta($user_id, 'UUID', true);
+
+        if (empty($uuid)) {
+            error_log(" [!] Geen UUID gevonden voor user_id: $user_id");
+            return;
+        }
+
         // Maak een XML van de gebruikers-ID
         $xml = new SimpleXMLElement('<UserMessage/>');
         $xml->addChild('ActionType', 'DELETE');
-        $xml->addChild('UUID', $user_id);
+        $xml->addChild('UUID', $uuid);
         $xml->addChild('TimeOfAction', gmdate('Y-m-d\TH:i:s\Z'));
 
         $xml_string = $xml->asXML();
@@ -78,4 +86,3 @@ function handle_user_delete($user_id) {
     send_user_delete_to_rabbitmq($user_id);
 }
 add_action('delete_user', 'handle_user_delete', 10, 1);
-?>
