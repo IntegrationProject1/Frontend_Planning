@@ -2,11 +2,11 @@
 /**
  * Plugin Name: User Create Consumer
  * Description: Ontvangt gegevens van RabbitMQ om gebruikers aan te maken.
- * Version: 1.0
+ * Version: 1.1
  * Author: Mathias Mertens
  */
 
-// DEBUG: check WP-Cron scheduling
+// DEBUG: Controleer of de WP‑Cron-job is ingepland.
 add_action('init', function() {
     static $once = false;
     if ($once) {
@@ -16,45 +16,48 @@ add_action('init', function() {
 
     $cron = get_option('cron');
     $found = false;
-
     foreach ($cron as $timestamp => $hooks) {
         if (isset($hooks['rabbitmq_process_user_create'])) {
             error_log("✅ rabbitmq_process_user_create gepland voor: " . date('c', $timestamp));
             $found = true;
         }
     }
-    if (! $found) {
+    if (!$found) {
         error_log("⚠️ rabbitmq_process_user_create NIET gevonden in WP-Cron array");
     }
 });
 
-// Laad de PHP AMQP-bibliotheek
+// Laad de PHP AMQP-bibliotheek (controleer het pad naar de autoloader!)
 require_once '/var/www/html/vendor/autoload.php';
 
+use PhpAmqpLib\Connection\AMQPStreamConnection;
+use PhpAmqpLib\Message\AMQPMessage;
+
 /**
- * Voeg een custom cron-interval van 1 minuut toe.
+ * Voeg een custom cron-interval van één minuut toe.
  */
 add_filter('cron_schedules', 'rabbitmq_add_minute_schedule');
 function rabbitmq_add_minute_schedule(array $schedules) {
+    // In plaats van __('Elke minuut') gebruiken we hier een gewone string, om de translate-functie niet te vroeg aan te roepen.
     $schedules['every_minute'] = [
         'interval' => 60,
-        'display'  => 'Elke minuut',
+        'display'  => 'Elke minuut'
     ];
     return $schedules;
 }
 
 /**
- * Plan de cron-job bij plugin-activation.
+ * Plan de cron-job bij plugin-activatie.
  */
 register_activation_hook(__FILE__, 'rabbitmq_activation');
 function rabbitmq_activation() {
-    if (! wp_next_scheduled('rabbitmq_process_user_create')) {
+    if (!wp_next_scheduled('rabbitmq_process_user_create')) {
         wp_schedule_event(time(), 'every_minute', 'rabbitmq_process_user_create');
     }
 }
 
 /**
- * Verwijder de cron-job bij plugin-deactivation.
+ * Verwijder de cron-job bij plugin-deactivatie.
  */
 register_deactivation_hook(__FILE__, 'rabbitmq_deactivation');
 function rabbitmq_deactivation() {
@@ -62,7 +65,7 @@ function rabbitmq_deactivation() {
 }
 
 /**
- * Hook voor het verwerken van berichten via WP-Cron.
+ * Hook voor het verwerken van RabbitMQ-berichten via WP‑Cron.
  */
 add_action('rabbitmq_process_user_create', 'rabbitmq_user_create_process_cron');
 function rabbitmq_user_create_process_cron() {
@@ -76,95 +79,94 @@ function rabbitmq_user_create_process_cron() {
     $routingKey = 'frontend.user.create';
 
     try {
-        $conn = new \PhpAmqpLib\Connection\AMQPStreamConnection($host, $port, $user, $password);
-        $chan = $conn->channel();
+        $connection = new AMQPStreamConnection($host, $port, $user, $password);
+        $channel    = $connection->channel();
 
-        $chan->exchange_declare($exchange, 'topic', false, true, false);
-        $chan->queue_declare($queue, false, true, false, false);
-        $chan->queue_bind($queue, $exchange, $routingKey);
+        // Declareer de exchange en queue.
+        $channel->exchange_declare($exchange, 'topic', false, true, false);
+        $channel->queue_declare($queue, false, true, false, false);
+        $channel->queue_bind($queue, $exchange, $routingKey);
 
-        // Limiteer prefetch tot 5 berichten
-        $chan->basic_qos(null, 5, null);
+        // Limiteer het aantal berichten per cyclus.
+        $channel->basic_qos(null, 5, null);
 
-        // Haal tot 5 berichten op via basic_get (niet-blocking)
+        // Haal maximaal 5 berichten op via basic_get (niet-blokkerend).
         for ($i = 0; $i < 5; $i++) {
-            $msg = $chan->basic_get($queue);
-            if (! $msg) {
+            $msg = $channel->basic_get($queue);
+            if (!$msg) {
                 break;
             }
-            _rabbitmq_process_user_message($msg, $chan);
+            process_rabbitmq_message($msg, $channel);
         }
-
-        $chan->close();
-        $conn->close();
-
+        $channel->close();
+        $connection->close();
     } catch (Exception $e) {
         error_log('RabbitMQ cron fout: ' . $e->getMessage());
     }
 }
 
 /**
- * Helper: verwerk één RabbitMQ-bericht.
+ * Verwerkt één ontvangen RabbitMQ-bericht.
  */
-function _rabbitmq_process_user_message(\PhpAmqpLib\Message\AMQPMessage $msg, $channel) {
+function process_rabbitmq_message(AMQPMessage $msg, $channel) {
     error_log('Bericht ontvangen via cron: ' . $msg->body);
 
     $xml = simplexml_load_string($msg->body);
-    if (! $xml || (string)$xml->ActionType !== 'CREATE') {
+    if (!$xml || (string)$xml->ActionType !== 'CREATE') {
         $channel->basic_ack($msg->delivery_info['delivery_tag']);
         return;
     }
 
-    // Payload uitlezen
+    // Gegevens uitlezen.
     $email      = (string)$xml->EmailAddress;
-    $first_name = (string)$xml->FirstName;
-    $last_name  = (string)$xml->LastName;
+    $firstName  = (string)$xml->FirstName;
+    $lastName   = (string)$xml->LastName;
     $uuid       = (string)$xml->UUID;
     $phone      = (string)$xml->PhoneNumber;
     $pass       = (string)$xml->EncryptedPassword;
 
-    // Check of de gebruiker al bestaat (op e-mail)
+    // Controleer of de gebruiker al bestaat.
     if (get_user_by('email', $email)) {
-        error_log("User {$email} bestaat al, skip");
+        error_log("Gebruiker {$email} bestaat al, bericht overslaan.");
         $channel->basic_ack($msg->delivery_info['delivery_tag']);
         return;
     }
 
-    // Tijdelijk uitschakelen van de producer-hook om feedback-loop te voorkomen
+    // Schakel de producer-hook tijdelijk uit om een feedback-loop te voorkomen.
     remove_action('profile_update', 'send_user_to_rabbitmq_on_profile_update');
 
-    // Gebruiker aanmaken
-    $user_data = [
+    // Gebruiker aanmaken.
+    $userData = [
         'user_login' => $email,
         'user_pass'  => $pass,
         'user_email' => $email,
-        'first_name' => $first_name,
-        'last_name'  => $last_name,
+        'first_name' => $firstName,
+        'last_name'  => $lastName,
     ];
-    $new_id = wp_insert_user($user_data);
-
-    if (is_wp_error($new_id)) {
-        error_log('Fout bij aanmaken user: ' . $new_id->get_error_message());
+    $newId = wp_insert_user($userData);
+    if (is_wp_error($newId)) {
+        error_log('Fout bij aanmaken gebruiker: ' . $newId->get_error_message());
     } else {
-        error_log("User aangemaakt (#{$new_id})");
+        error_log("Gebruiker aangemaakt (#{$newId})");
 
-        // Zet de flag zodat de producer later deze gebruiker overslaat
-        update_user_meta($new_id, 'synced_to_wordpress', '1');
-        update_user_meta($new_id, 'UUID', $uuid);
-        update_user_meta($new_id, 'phone_number', $phone);
+        // Voeg user meta toe zodat de producer later overslaat.
+        update_user_meta($newId, 'synced_to_wordpress', '1');
+        update_user_meta($newId, 'UUID', $uuid);
+        update_user_meta($newId, 'phone_number', $phone);
 
-        if ($xml->Business) {
-            update_user_meta($new_id, 'business_name', (string)$xml->Business->BusinessName);
-            update_user_meta($new_id, 'business_email', (string)$xml->Business->BusinessEmail);
-            update_user_meta($new_id, 'real_address', (string)$xml->Business->RealAddress);
-            update_user_meta($new_id, 'btw_number', (string)$xml->Business->BTWNumber);
-            update_user_meta($new_id, 'facturation_address', (string)$xml->Business->FacturationAddress);
+        // Verwerk optionele Business-gegevens.
+        if (isset($xml->Business)) {
+            update_user_meta($newId, 'business_name', (string)$xml->Business->BusinessName);
+            update_user_meta($newId, 'business_email', (string)$xml->Business->BusinessEmail);
+            update_user_meta($newId, 'real_address', (string)$xml->Business->RealAddress);
+            update_user_meta($newId, 'btw_number', (string)$xml->Business->BTWNumber);
+            update_user_meta($newId, 'facturation_address', (string)$xml->Business->FacturationAddress);
         }
     }
 
-    // Heractiveer de producer-hook zodat toekomstige profile_update events weer verwerkt worden
+    // Heractiveer de producer-hook zodat toekomstige profile_update events weer verwerkt worden.
     add_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);
 
-    // Ack het bericht zodat het niet opnieuw wordt verwerkt
+    // Bevestig dat het bericht is verwerkt.
     $channel->basic_ack($msg->delivery_info['delivery_tag']);
 }

@@ -2,95 +2,122 @@
 /**
  * Plugin Name: User Delete Consumer
  * Description: Verwijdert users op basis van RabbitMQ.
- * Version: 1.0
+ * Version: 1.1
  * Author: Mathias Mertens
  */
 
-require_once '/var/www/html/wp-load.php';
-require_once '/var/www/html/vendor/autoload.php';
+// Laad de AMQP-bibliotheek
+require_once ABSPATH . 'vendor/autoload.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Message\AMQPMessage;
 
-/**
- * Verwerkt een DELETE-bericht en verwijdert de user.
- */
-function process_user_deletion($xml_string) {
-    $xml = simplexml_load_string($xml_string);
-    if (!$xml || (string)$xml->ActionType !== 'DELETE') {
-        return;
+// Voeg een cron-interval van één minuut toe
+add_filter('cron_schedules', function($schedules) {
+    if (!isset($schedules['every_minute'])) {
+        $schedules['every_minute'] = [
+            'interval' => 60,
+            'display'  => 'Elke minuut'
+        ];
     }
+    return $schedules;
+});
 
-    // Parse de UUID als xs:dateTime met microseconden
-    try {
-        $dtUuid = \DateTime::createFromFormat('Y-m-d\TH:i:s.v\Z', (string)$xml->UUID);
-        if (! $dtUuid) {
-            throw new \Exception('Format mismatch');
-        }
-        $uuidString = $dtUuid->format('Y-m-d\TH:i:s.v\Z');
-    } catch (\Exception $e) {
-        error_log("Ongeldig UUID-datumformaat in delete: " . $e->getMessage());
-        return;
+// Definieer cron-event
+define('USER_DELETE_EVENT', 'rabbitmq_process_user_delete');
+
+// Plan cron-job bij activatie
+register_activation_hook(__FILE__, 'rabbitmq_delete_activate');
+function rabbitmq_delete_activate() {
+    if (!wp_next_scheduled(USER_DELETE_EVENT)) {
+        wp_schedule_event(time(), 'every_minute', USER_DELETE_EVENT);
     }
-
-    // Zoek de gebruiker via meta 'UUID'.
-    $users = get_users([
-        'meta_key'   => 'UUID',
-        'meta_value' => $uuidString,
-        'number'     => 1,
-        'fields'     => 'ID',
-    ]);
-    if (empty($users)) {
-        error_log("Geen gebruiker gevonden met UUID: {$uuidString}");
-        return;
-    }
-
-    $user_id = $users[0];
-
-    // Verwijder de user
-    require_once ABSPATH . 'wp-admin/includes/user.php';
-    wp_delete_user($user_id);
-    error_log("Gebruiker succesvol verwijderd met user_id: {$user_id}");
 }
 
-add_action('init', function () {
-    // Haal RabbitMQ instellingen
-    $host = getenv('RABBITMQ_HOST');
-    $port = getenv('RABBITMQ_PORT');
-    $user = getenv('RABBITMQ_USER');
-    $pass = getenv('RABBITMQ_PASSWORD');
+// Verwijder cron-job bij deactivatie
+register_deactivation_hook(__FILE__, 'rabbitmq_delete_deactivate');
+function rabbitmq_delete_deactivate() {
+    wp_clear_scheduled_hook(USER_DELETE_EVENT);
+}
 
-    $exchange    = 'user';
-    $queue_name  = 'frontend_user_delete';
-    $routing_key = 'frontend.user.delete';
+// Hook voor cron-event
+add_action(USER_DELETE_EVENT, 'rabbitmq_user_delete_process_cron');
+function rabbitmq_user_delete_process_cron() {
+    $host       = getenv('RABBITMQ_HOST');
+    $port       = getenv('RABBITMQ_PORT');
+    $user       = getenv('RABBITMQ_USER');
+    $password   = getenv('RABBITMQ_PASSWORD');
+    $exchange   = 'user';
+    $queue      = 'frontend_user_delete';
+    $routingKey = 'frontend.user.delete';
 
     try {
-        // Verbind met RabbitMQ
-        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
+        $connection = new AMQPStreamConnection($host, $port, $user, $password);
         $channel    = $connection->channel();
 
-        // Declareer exchange en queue
         $channel->exchange_declare($exchange, 'topic', false, true, false);
-        $channel->queue_declare($queue_name, false, true, false, false);
-        $channel->queue_bind($queue_name, $exchange, $routing_key);
+        $channel->queue_declare($queue, false, true, false, false);
+        $channel->queue_bind($queue, $exchange, $routingKey);
+        $channel->basic_qos(null, 5, null);
 
-        // Callback voor delete
-        $callback = function (AMQPMessage $msg) use ($channel) {
-            error_log("Delete-bericht ontvangen: " . $msg->body);
-            process_user_deletion($msg->body);
+        for ($i = 0; $i < 5; $i++) {
+            $msg = $channel->basic_get($queue);
+            if (!$msg) break;
+
+            $xml = simplexml_load_string($msg->body);
+            if (!$xml || (string)$xml->ActionType !== 'DELETE') {
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                continue;
+            }
+
+            // Lees UUID en TimeOfAction
+            $uuid         = (string)$xml->UUID;
+            $timeOfAction = (string)$xml->TimeOfAction;
+
+            // Zoek WP-gebruiker op basis van UUID
+            $users = get_users([
+                'meta_key'   => 'UUID',
+                'meta_value' => $uuid,
+                'number'     => 1,
+                'fields'     => 'ID'
+            ]);
+            if (empty($users)) {
+                error_log("Geen gebruiker gevonden voor DELETE met UUID {$uuid}");
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                continue;
+            }
+            $user_id = $users[0];
+
+            // Zet consumer lock om producers te skippen
+            update_user_meta($user_id, 'rabbitmq_lock', '1');
+
+            // Verwijder producer-hook om dubbele berichten te voorkomen
+            remove_action('delete_user', 'send_user_to_rabbitmq_on_user_delete', 10, 1);
+
+            // Zorg dat wp_delete_user() beschikbaar is
+            if (!function_exists('wp_delete_user')) {
+                require_once ABSPATH . 'wp-admin/includes/user.php';
+            }
+
+            // Verwijder gebruiker
+            if (wp_delete_user($user_id, true)) {
+                error_log("Gebruiker #{$user_id} verwijderd via consumer (UUID: {$uuid} op {$timeOfAction})");
+            } else {
+                error_log("Fout bij verwijderen gebruiker #{$user_id}");
+            }
+
+            // Heractiveer producer-hook
+            add_action('delete_user', 'send_user_to_rabbitmq_on_user_delete', 10, 1);
+
+            // Verwijder consumer lock
+            delete_user_meta($user_id, 'rabbitmq_lock');
+
+            // Bevestig verwerking
             $channel->basic_ack($msg->delivery_info['delivery_tag']);
-        };
-
-        $channel->basic_consume($queue_name, '', false, false, false, false, $callback);
-
-        error_log("Wachten op delete-berichten in queue '{$queue_name}'...");
-        while (count($channel->callbacks)) {
-            $channel->wait();
         }
 
         $channel->close();
         $connection->close();
     } catch (Exception $e) {
-        error_log("RabbitMQ Delete Consumer Fout: " . $e->getMessage());
+        error_log('RabbitMQ DELETE cron fout: ' . $e->getMessage());
     }
-});
+}

@@ -6,142 +6,135 @@
  * Author: Mathias Mertens
  */
 
-require_once '/var/www/html/wp-load.php';
-require_once '/var/www/html/vendor/autoload.php';
+// Laad de AMQP-bibliotheek
+require_once ABSPATH . 'vendor/autoload.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Message\AMQPMessage;
 
-/**
- * Verwerkt een UPDATE-bericht en werkt de user bij.
- */
-function process_user_update($xml_string) {
-    $xml = simplexml_load_string($xml_string);
-    if (!$xml || (string)$xml->ActionType !== 'UPDATE') {
-        return;
-    }
-
-    // Parse de UUID als xs:dateTime met microseconden
-    try {
-        $dtUuid = \DateTime::createFromFormat('Y-m-d\TH:i:s.v\Z', (string) $xml->UUID);
-        if (! $dtUuid) {
-            throw new \Exception('Format mismatch');
-        }
-        $uuidString = $dtUuid->format('Y-m-d\TH:i:s.v\Z');
-    } catch (\Exception $e) {
-        error_log("Ongeldig UUID-datumformaat in update: " . $e->getMessage());
-        return;
-    }
-
-    // Zoek de gebruiker via meta 'UUID'
-    $users = get_users([
-        'meta_key'   => 'UUID',
-        'meta_value' => $uuidString,
-        'number'     => 1,
-        'fields'     => 'ID',
-    ]);
-    if (empty($users)) {
-        error_log("Geen gebruiker gevonden met UUID: {$uuidString}");
-        return;
-    }
-    $user_id = $users[0];
-
-    // Bereid WP-update data
-    $userdata = ['ID' => $user_id];
-    $usermeta = [];
-
-    // Veldmapping XML => WP
-    $tag_map = [
-        'EncryptedPassword' => 'user_pass',
-        'EmailAddress'      => 'user_email',
-        'FirstName'         => 'first_name',
-        'LastName'          => 'last_name',
-        'PhoneNumber'       => 'phone_number',
-    ];
-
-    foreach ($tag_map as $xml_field => $wp_field) {
-        if (!empty($xml->$xml_field)) {
-            if (in_array($wp_field, ['user_email', 'user_pass'])) {
-                $userdata[$wp_field] = (string) $xml->$xml_field;
-            } else {
-                $usermeta[$wp_field] = (string) $xml->$xml_field;
-            }
-        }
-    }
-
-    // Optioneel TimeOfAction opslaan
-    if (!empty($xml->TimeOfAction)) {
-        try {
-            $dtAction = new \DateTime((string) $xml->TimeOfAction);
-            $timeOfAction = $dtAction->format('Y-m-d\TH:i:s\Z');
-            $usermeta['TimeOfAction'] = $timeOfAction;
-        } catch (\Exception $e) {
-            error_log("Ongeldig TimeOfAction in update: " . $e->getMessage());
-        }
-    }
-
-    // Verwerk business data
-    if (!empty($xml->Business)) {
-        $business_fields = [
-            'BusinessName'      => 'business_name',
-            'BusinessEmail'     => 'business_email',
-            'RealAddress'       => 'real_address',
-            'BTWNumber'         => 'btw_number',
-            'FacturationAddress'=> 'facturation_address',
+// Voeg een cron-interval van één minuut toe
+add_filter('cron_schedules', function($schedules) {
+    if (!isset($schedules['every_minute'])) {
+        $schedules['every_minute'] = [
+            'interval' => 60,
+            'display'  => 'Elke minuut'
         ];
-        foreach ($business_fields as $xml_tag => $meta_key) {
-            if (!empty($xml->Business->$xml_tag)) {
-                $usermeta[$meta_key] = (string) $xml->Business->$xml_tag;
-            }
-        }
     }
+    return $schedules;
+});
 
-    // Voer de update uit
-    wp_update_user($userdata);
-    foreach ($usermeta as $meta_key => $meta_value) {
-        update_user_meta($user_id, $meta_key, $meta_value);
+// Definieer cron-event
+define('USER_UPDATE_EVENT', 'rabbitmq_process_user_update');
+
+// Plan cron-job bij activatie
+register_activation_hook(__FILE__, 'rabbitmq_update_activate');
+function rabbitmq_update_activate() {
+    if (!wp_next_scheduled(USER_UPDATE_EVENT)) {
+        wp_schedule_event(time(), 'every_minute', USER_UPDATE_EVENT);
     }
-
-    error_log("Gebruiker succesvol geüpdatet met user_id: {$user_id}");
 }
 
-add_action('init', function () {
-    // RabbitMQ instellingen
-    $host = getenv('RABBITMQ_HOST');
-    $port = getenv('RABBITMQ_PORT');
-    $user = getenv('RABBITMQ_USER');
-    $pass = getenv('RABBITMQ_PASSWORD');
+// Verwijder cron-job bij deactivatie
+register_deactivation_hook(__FILE__, 'rabbitmq_update_deactivate');
+function rabbitmq_update_deactivate() {
+    wp_clear_scheduled_hook(USER_UPDATE_EVENT);
+}
 
-    $exchange    = 'user';
-    $queue_name  = 'frontend_user_update';
-    $routing_key = 'frontend.user.update';
+// Hook voor cron-event
+add_action(USER_UPDATE_EVENT, 'rabbitmq_user_update_process_cron');
+function rabbitmq_user_update_process_cron() {
+    $host       = getenv('RABBITMQ_HOST');
+    $port       = getenv('RABBITMQ_PORT');
+    $user       = getenv('RABBITMQ_USER');
+    $password   = getenv('RABBITMQ_PASSWORD');
+    $exchange   = 'user';
+    $queue      = 'frontend_user_update';
+    $routingKey = 'frontend.user.update';
 
     try {
-        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
+        $connection = new AMQPStreamConnection($host, $port, $user, $password);
         $channel    = $connection->channel();
 
-        // Declareer exchange en queue
         $channel->exchange_declare($exchange, 'topic', false, true, false);
-        $channel->queue_declare($queue_name, false, true, false, false);
-        $channel->queue_bind($queue_name, $exchange, $routing_key);
+        $channel->queue_declare($queue, false, true, false, false);
+        $channel->queue_bind($queue, $exchange, $routingKey);
+        $channel->basic_qos(null, 5, null);
 
-        // Callback voor update
-        $callback = function (AMQPMessage $msg) use ($channel) {
-            error_log("Update-bericht ontvangen: " . $msg->body);
-            process_user_update($msg->body);
+        for ($i = 0; $i < 5; $i++) {
+            $msg = $channel->basic_get($queue);
+            if (!$msg) break;
+
+            $xml = simplexml_load_string($msg->body);
+            if (!$xml || (string)$xml->ActionType !== 'UPDATE') {
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                continue;
+            }
+
+            // Lees UUID en TimeOfAction
+            $uuid         = (string)$xml->UUID;
+            $timeOfAction = (string)$xml->TimeOfAction;
+
+            // Zoek WP-gebruiker op basis van UUID
+            $users = get_users([
+                'meta_key'   => 'UUID',
+                'meta_value' => $uuid,
+                'number'     => 1,
+                'fields'     => 'ID'
+            ]);
+            if (empty($users)) {
+                error_log("Geen gebruiker gevonden voor UPDATE met UUID {$uuid}");
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                continue;
+            }
+            $user_id = $users[0];
+
+            // Zet consumer lock om producers te skippen
+            update_user_meta($user_id, 'rabbitmq_lock', '1');
+
+            // Verwijder producer-hooks om dubbele berichten te voorkomen
+            remove_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 2);
+            remove_action('personal_options_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);
+
+            // Prepare update data
+            $update_data = ['ID' => $user_id];
+            if (isset($xml->FirstName))    $update_data['first_name'] = (string)$xml->FirstName;
+            if (isset($xml->LastName))     $update_data['last_name']  = (string)$xml->LastName;
+            if (isset($xml->EmailAddress)) $update_data['user_email'] = (string)$xml->EmailAddress;
+            if (isset($xml->EncryptedPassword)) {
+                $update_data['user_pass'] = (string)$xml->EncryptedPassword;
+            }
+
+            $result = wp_update_user($update_data);
+            if (is_wp_error($result)) {
+                error_log('Fout bij update gebruiker #' . $user_id . ': ' . $result->get_error_message());
+            } else {
+                error_log("Gebruiker #{$user_id} bijgewerkt (UUID: {$uuid} op {$timeOfAction})");
+
+                if (isset($xml->PhoneNumber)) {
+                    update_user_meta($user_id, 'phone_number', (string)$xml->PhoneNumber);
+                }
+                if (isset($xml->Business)) {
+                    update_user_meta($user_id, 'business_name',       (string)$xml->Business->BusinessName);
+                    update_user_meta($user_id, 'business_email',      (string)$xml->Business->BusinessEmail);
+                    update_user_meta($user_id, 'real_address',        (string)$xml->Business->RealAddress);
+                    update_user_meta($user_id, 'btw_number',          (string)$xml->Business->BTWNumber);
+                    update_user_meta($user_id, 'facturation_address', (string)$xml->Business->FacturationAddress);
+                }
+            }
+
+            // Heractiveer producer-hooks
+            add_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 2);
+            add_action('personal_options_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);
+
+            // Verwijder consumer lock
+            delete_user_meta($user_id, 'rabbitmq_lock');
+
+            // Bevestig verwerking
             $channel->basic_ack($msg->delivery_info['delivery_tag']);
-        };
-
-        $channel->basic_consume($queue_name, '', false, false, false, false, $callback);
-
-        error_log("Wachten op update-berichten in queue '{$queue_name}'...");
-        while (count($channel->callbacks)) {
-            $channel->wait();
         }
 
         $channel->close();
         $connection->close();
     } catch (Exception $e) {
-        error_log("RabbitMQ Update Consumer Fout: " . $e->getMessage());
+        error_log('RabbitMQ UPDATE cron fout: ' . $e->getMessage());
     }
-});
+}
