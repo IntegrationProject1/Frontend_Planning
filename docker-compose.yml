@@ -52,6 +52,21 @@ services:
     networks:
       - frontend_network
 
+  heartbeat:
+      build:
+        context: ./heartbeat
+      container_name: frontend_heartbeat
+      depends_on:
+        - wordpress
+      environment:
+        RABBITMQ_HOST: ${RABBITMQ_HOST}
+        RABBITMQ_PORT: ${RABBITMQ_PORT}
+        RABBITMQ_USER: ${RABBITMQ_USER}
+        RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      restart: unless-stopped
+      networks:
+        - frontend_network
+
 networks:
   frontend_network:
     name: frontend_network
