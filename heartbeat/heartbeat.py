@@ -22,8 +22,8 @@ RABBITMQ_PASSWORD = os.environ.get('RABBITMQ_PASSWORD', 'uXe5u1oWkh32JyLA')  # D
 RABBITMQ_VHOST = 'attendify'
 
 # Heartbeat-specific parameters
-EXCHANGE_NAME = 'monitoring'
-ROUTING_KEY = 'monitoring.heartbeat'
+EXCHANGE_NAME = 'heartbeat_monitoring'
+ROUTING_KEY = 'controlroom.heartbeat.ping'
 
 # ANSI kleuren
 GREEN = '\033[92m'
