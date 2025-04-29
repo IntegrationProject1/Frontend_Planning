@@ -16,8 +16,8 @@ function gcal_render_calendar() {
     <script>
       function start() {
         gapi.client.init({
-          apiKey: 'AIzaSyDYIzq88EY_Ne8uz_WI31LO5jK6i_fkXjA',
-          clientId: '460032815861-lj95nsl6a9h1rgh64lilg8sg5j5boc65.apps.googleusercontent.com',
+          apiKey: getenv('GOOGLE_API_KEY'),
+          clientId: getenv('GOOGLE_CLIENT_ID'),
           discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
           scope: "https://www.googleapis.com/auth/calendar.readonly"
         }).then(function () {
