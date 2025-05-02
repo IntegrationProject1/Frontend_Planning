@@ -10,6 +10,7 @@
 require_once ABSPATH . 'vendor/autoload.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
+use PhpAmqpLib\Message\AMQPMessage;
 
 // Voeg een cron-interval van één minuut toe
 add_filter('cron_schedules', function($schedules) {
@@ -39,7 +40,7 @@ function rabbitmq_delete_deactivate() {
     wp_clear_scheduled_hook(USER_DELETE_EVENT);
 }
 
-// Hook voor cron-event
+// Hook voor het cron-event
 add_action(USER_DELETE_EVENT, 'rabbitmq_user_delete_process_cron');
 function rabbitmq_user_delete_process_cron() {
     $host       = getenv('RABBITMQ_HOST');
@@ -54,14 +55,18 @@ function rabbitmq_user_delete_process_cron() {
         $connection = new AMQPStreamConnection($host, $port, $user, $password);
         $channel    = $connection->channel();
 
+        // Declareer exchange en queue
         $channel->exchange_declare($exchange, 'topic', false, true, false);
         $channel->queue_declare($queue, false, true, false, false);
         $channel->queue_bind($queue, $exchange, $routingKey);
         $channel->basic_qos(null, 5, null);
 
+        // Haal maximaal 5 berichten per run
         for ($i = 0; $i < 5; $i++) {
             $msg = $channel->basic_get($queue);
-            if (!$msg) break;
+            if (!$msg) {
+                break;
+            }
 
             $xml = simplexml_load_string($msg->body);
             if (!$xml || (string)$xml->ActionType !== 'DELETE') {
@@ -87,18 +92,18 @@ function rabbitmq_user_delete_process_cron() {
             }
             $user_id = $users[0];
 
-            // Zet consumer lock om producers te skippen
+            // Zet consumer-lock om producer te laten skippen
             update_user_meta($user_id, 'rabbitmq_lock', '1');
 
             // Verwijder producer-hook om dubbele berichten te voorkomen
-            remove_action('delete_user', 'send_user_to_rabbitmq_on_user_delete', 10, 1);
+            remove_action('delete_user', 'handle_user_delete', 10, 1);
 
             // Zorg dat wp_delete_user() beschikbaar is
             if (!function_exists('wp_delete_user')) {
                 require_once ABSPATH . 'wp-admin/includes/user.php';
             }
 
-            // Verwijder gebruiker
+            // Verwijder de gebruiker
             if (wp_delete_user($user_id, true)) {
                 error_log("Gebruiker #{$user_id} verwijderd via consumer (UUID: {$uuid} op {$timeOfAction})");
             } else {
@@ -106,9 +111,9 @@ function rabbitmq_user_delete_process_cron() {
             }
 
             // Heractiveer producer-hook
-            add_action('delete_user', 'send_user_to_rabbitmq_on_user_delete', 10, 1);
+            add_action('delete_user', 'handle_user_delete', 10, 1);
 
-            // Verwijder consumer lock
+            // Verwijder consumer-lock
             delete_user_meta($user_id, 'rabbitmq_lock');
 
             // Bevestig verwerking

@@ -85,6 +85,12 @@ function schedule_rabbitmq_meta_update($meta_id, $user_id, $meta_key, $meta_valu
 add_action('updated_user_meta', 'schedule_rabbitmq_meta_update', 10, 4);
 
 function send_user_update_to_rabbitmq($changes) {
+    if ( get_user_meta($changes['id'], 'rabbitmq_lock', true) ) {
+        error_log(" [x] Update for user {$changes['id']} already in progress; removing lock and skipping…");
+        delete_user_meta($changes['id'], 'rabbitmq_lock'); // Verwijder de lock om de database schoon te houden
+        return;
+    }
+
     try {
         if (empty($changes) || !isset($changes['id'])) {
             throw new Exception('No valid changes to send');
@@ -155,5 +161,6 @@ function send_user_update_to_rabbitmq($changes) {
         $connection->close();
     } catch (Exception $e) {
         error_log('Error sending user update to RabbitMQ: ' . $e->getMessage());
+        delete_user_meta($user_id, 'rabbitmq_lock'); // Verwijder de lock om de database schoon te houden
     }
 }

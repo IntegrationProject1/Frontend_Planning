@@ -10,6 +10,7 @@
 require_once ABSPATH . 'vendor/autoload.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
+use PhpAmqpLib\Message\AMQPMessage;
 
 // Voeg een cron-interval van één minuut toe
 add_filter('cron_schedules', function($schedules) {
@@ -25,21 +26,19 @@ add_filter('cron_schedules', function($schedules) {
 // Definieer cron-event
 define('USER_UPDATE_EVENT', 'rabbitmq_process_user_update');
 
-// Plan cron-job bij activatie
-register_activation_hook(__FILE__, 'rabbitmq_update_activate');
+// Plan en verwijder cron-job
+register_activation_hook  (__FILE__, 'rabbitmq_update_activate');
+register_deactivation_hook(__FILE__, 'rabbitmq_update_deactivate');
 function rabbitmq_update_activate() {
     if (!wp_next_scheduled(USER_UPDATE_EVENT)) {
         wp_schedule_event(time(), 'every_minute', USER_UPDATE_EVENT);
     }
 }
-
-// Verwijder cron-job bij deactivatie
-register_deactivation_hook(__FILE__, 'rabbitmq_update_deactivate');
 function rabbitmq_update_deactivate() {
     wp_clear_scheduled_hook(USER_UPDATE_EVENT);
 }
 
-// Hook voor cron-event
+// Hook voor het cron-event
 add_action(USER_UPDATE_EVENT, 'rabbitmq_user_update_process_cron');
 function rabbitmq_user_update_process_cron() {
     $host       = getenv('RABBITMQ_HOST');
@@ -51,14 +50,16 @@ function rabbitmq_user_update_process_cron() {
     $routingKey = 'frontend.user.update';
 
     try {
-        $connection = new AMQPStreamConnection($host, $port, $user, $password);
-        $channel    = $connection->channel();
+        $conn    = new AMQPStreamConnection($host, $port, $user, $password);
+        $channel = $conn->channel();
 
+        // Declareer exchange en queue
         $channel->exchange_declare($exchange, 'topic', false, true, false);
         $channel->queue_declare($queue, false, true, false, false);
-        $channel->queue_bind($queue, $exchange, $routingKey);
+        $channel->queue_bind   ($queue, $exchange, $routingKey);
         $channel->basic_qos(null, 5, null);
 
+        // Haal max. 5 berichten
         for ($i = 0; $i < 5; $i++) {
             $msg = $channel->basic_get($queue);
             if (!$msg) break;
@@ -69,11 +70,11 @@ function rabbitmq_user_update_process_cron() {
                 continue;
             }
 
-            // Lees UUID en TimeOfAction
+            // UUID & timestamp
             $uuid         = (string)$xml->UUID;
             $timeOfAction = (string)$xml->TimeOfAction;
 
-            // Zoek WP-gebruiker op basis van UUID
+            // Vind WP-user op UUID
             $users = get_users([
                 'meta_key'   => 'UUID',
                 'meta_value' => $uuid,
@@ -87,14 +88,14 @@ function rabbitmq_user_update_process_cron() {
             }
             $user_id = $users[0];
 
-            // Zet consumer lock om producers te skippen
+            // ——— Lock zetten voor producer ———
             update_user_meta($user_id, 'rabbitmq_lock', '1');
 
-            // Verwijder producer-hooks om dubbele berichten te voorkomen
-            remove_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 2);
-            remove_action('personal_options_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);
+            // Schakel producer-hooks uit
+            remove_action('profile_update',   'schedule_rabbitmq_user_update', 10, 2);
+            remove_action('updated_user_meta','schedule_rabbitmq_meta_update',   10, 4);
 
-            // Prepare update data
+            // Bouw update-array
             $update_data = ['ID' => $user_id];
             if (isset($xml->FirstName))    $update_data['first_name'] = (string)$xml->FirstName;
             if (isset($xml->LastName))     $update_data['last_name']  = (string)$xml->LastName;
@@ -103,12 +104,14 @@ function rabbitmq_user_update_process_cron() {
                 $update_data['user_pass'] = (string)$xml->EncryptedPassword;
             }
 
+            // Voer WP‑update uit
             $result = wp_update_user($update_data);
             if (is_wp_error($result)) {
                 error_log('Fout bij update gebruiker #' . $user_id . ': ' . $result->get_error_message());
             } else {
                 error_log("Gebruiker #{$user_id} bijgewerkt (UUID: {$uuid} op {$timeOfAction})");
 
+                // Optionele meta
                 if (isset($xml->PhoneNumber)) {
                     update_user_meta($user_id, 'phone_number', (string)$xml->PhoneNumber);
                 }
@@ -122,18 +125,18 @@ function rabbitmq_user_update_process_cron() {
             }
 
             // Heractiveer producer-hooks
-            add_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 2);
-            add_action('personal_options_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);
+            add_action('profile_update',    'schedule_rabbitmq_user_update', 10, 2);
+            add_action('updated_user_meta', 'schedule_rabbitmq_meta_update',   10, 4);
 
-            // Verwijder consumer lock
+            // Verwijder de lock
             delete_user_meta($user_id, 'rabbitmq_lock');
 
-            // Bevestig verwerking
+            // Ack bericht
             $channel->basic_ack($msg->delivery_info['delivery_tag']);
         }
 
         $channel->close();
-        $connection->close();
+        $conn->close();
     } catch (Exception $e) {
         error_log('RabbitMQ UPDATE cron fout: ' . $e->getMessage());
     }
