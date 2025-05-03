@@ -15,9 +15,10 @@ use PhpAmqpLib\Message\AMQPMessage;
 
 // Functie om gebruikersgegevens naar RabbitMQ te sturen bij profielupdate
 function send_user_to_rabbitmq_on_profile_update($user_id) {
-    
+    error_log("🐝 ENTER send_user_to_rabbitmq_on_profile_update for user $user_id");
     if (get_user_meta($user_id, 'synced_to_wordpress', true)) {
         error_log(" [x] User $user_id already synced. Skipping...");
+        delete_user_meta($user_id, 'synced_to_wordpress'); // Verwijder de meta om de database schoon te houden
         return;
     }
     
@@ -112,6 +113,7 @@ function send_user_to_rabbitmq_on_profile_update($user_id) {
         $connection->close();
     } catch (Exception $e) {
         error_log('Error sending to RabbitMQ: ' . $e->getMessage());
+        delete_user_meta($user_id, 'synced_to_wordpress'); // Verwijder de meta om de database schoon te houden
     }
 }
 add_action('profile_update', 'send_user_to_rabbitmq_on_profile_update', 10, 1);

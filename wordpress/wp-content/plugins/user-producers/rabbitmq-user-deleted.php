@@ -16,6 +16,12 @@ use PhpAmqpLib\Message\AMQPMessage;
 
 // Functie om de gebruikers-ID naar RabbitMQ te sturen wanneer een gebruiker wordt verwijderd
 function send_user_delete_to_rabbitmq($user_id) {
+    if ( get_user_meta($user_id, 'rabbitmq_lock', true) ) {
+        error_log(" [x] Delete for user $user_id already in progress. Removing lock and skipping…");
+        delete_user_meta($user_id, 'rabbitmq_lock'); // Verwijder de lock om de database schoon te houden
+        return;
+    }
+
     try {
 
         $uuid = get_user_meta($user_id, 'UUID', true);
