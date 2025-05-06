@@ -45,8 +45,6 @@ services:
     container_name: frontend_phpmyadmin
     environment:
       PMA_HOST: db
-      PMA_USER: ${DB_USER}
-      PMA_PASSWORD: ${DB_PASSWORD}
     ports:
       - "30011:80"
     depends_on:
