@@ -6,6 +6,8 @@
  * Author: Mathias Mertens
  */
 
+ require_once plugin_dir_path(__FILE__) . '/../send-controlroom-log.php';// Load the controlroom log sender function for RabbitMQ integration
+
 // DEBUG: Controleer of de WP‑Cron-job is ingepland.
 add_action('init', function() {
     static $once = false;
@@ -145,9 +147,16 @@ function process_rabbitmq_message(AMQPMessage $msg, $channel) {
     ];
     $newId = wp_insert_user($userData);
     if (is_wp_error($newId)) {
-        error_log('Fout bij aanmaken gebruiker: ' . $newId->get_error_message());
+$errorMessage = $newId->get_error_message(); // Get the detailed error message from WordPress
+error_log('Fout bij aanmaken gebruiker: ' . $errorMessage);// Log the error locally to debug
+send_controlroom_log('error', "Failed to create user '{$email}': " . $errorMessage);// Send an error log to the controlroom via RabbitMQ
+
+
     } else {
         error_log("Gebruiker aangemaakt (#{$newId})");
+
+            send_controlroom_log('success', "User '{$email}' created successfully in WordPress.");// Send a success log to the controlroom after user creation
+
 
         // Voeg user meta toe zodat de producer later overslaat.
         update_user_meta($newId, 'synced_to_wordpress', '1');
