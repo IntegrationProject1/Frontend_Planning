@@ -2,4 +2,5 @@
 venv/
 __pycache__/
 *.pyc
+wordpress/wp-content/credentials/calendar-service-account.json
 
