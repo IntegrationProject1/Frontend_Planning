@@ -1,2 +1,19 @@
 .env
-.venv
+venv/
+__pycache__/
+*.pyc
+# Local WordPress environment
+wordpress/wp-content/uploads/
+wordpress/wp-content/cache/
+wordpress/wp-content/upgrade/
+wordpress/wp-content/plugins/controlroom-log-debug/
+wordpress/wp-content/plugins/**/__pycache__/
+wordpress/wp-content/plugins/**/log_debug.txt
+.env
+*.log
+__pycache__/
+*.pyc
+attendify-local-test/
+expo-local-test/
+log_test.py
+

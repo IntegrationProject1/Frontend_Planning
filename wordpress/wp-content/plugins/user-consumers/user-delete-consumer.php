@@ -6,6 +6,8 @@
  * Author: Mathias Mertens
  */
 
+ require_once plugin_dir_path(__FILE__) . '/../send-controlroom-log.php'; // Load the controlroom log sender function
+
 // Laad de AMQP-bibliotheek
 require_once ABSPATH . 'vendor/autoload.php';
 
@@ -106,10 +108,11 @@ function rabbitmq_user_delete_process_cron() {
             // Verwijder de gebruiker
             if (wp_delete_user($user_id, true)) {
                 error_log("Gebruiker #{$user_id} verwijderd via consumer (UUID: {$uuid} op {$timeOfAction})");
-            } else {
-                error_log("Fout bij verwijderen gebruiker #{$user_id}");
-            }
-
+                    send_controlroom_log('success', "User #{$user_id} deleted successfully (UUID: {$uuid}) at {$timeOfAction}."); // Send success log to controlroom
+} else {
+    error_log("Fout bij verwijderen gebruiker #{$user_id}"); // Log locally
+    send_controlroom_log('error', "Failed to delete user #{$user_id} (UUID: {$uuid}) at {$timeOfAction}."); // Send error log to controlroom
+}
             // Heractiveer producer-hook
             add_action('delete_user', 'handle_user_delete', 10, 1);
 
