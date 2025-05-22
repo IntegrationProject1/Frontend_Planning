@@ -178,7 +178,6 @@ try {
 
     $connection = new AMQPStreamConnection($host, $port, $user, $password);
     $channel    = $connection->channel();
-    $channel->exchange_declare($exchange, 'topic', false, true, false);
 
     $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
     $channel->basic_publish($msg, $exchange, $routing);
