@@ -52,13 +52,19 @@ function expo_render_events() {
     <script>
     document.addEventListener("DOMContentLoaded", function () {
         fetch("<?php echo admin_url('admin-ajax.php'); ?>?action=get_calendar_events")
-            .then(res => res.json())
+            .then(res => res.json()
+                .catch(e => {
+                    console.error("❌ JSON parsing failed:", e);
+                    return { success: false, data: { message: "Invalide JSON reçu." } };
+                })
+            )
             .then(data => {
-                if (data.success === false) {
-                    console.error("❌ Erreur AJAX:", data.data.message);
-                    document.getElementById("expo-events").innerHTML = "<p>❌ Erreur: " + data.data.message + "</p>";
+                if (!data || data.success === false) {
+                    console.error("❌ Erreur AJAX:", data?.data?.message || "Réponse vide ou invalide");
+                    document.getElementById("expo-events").innerHTML = "<p>❌ Erreur: " + (data?.data?.message || "Inconnue") + "</p>";
                     return;
                 }
+
                 const events = data;
                 const container = document.getElementById("expo-events");
                 container.innerHTML = "";
@@ -84,7 +90,7 @@ function expo_render_events() {
             })
             .catch(err => {
                 console.error("❌ AJAX fetch crash:", err);
-                document.getElementById("expo-events").innerHTML = "<p>❌ Erreur technique.</p>";
+                document.getElementById("expo-events").innerHTML = "<p>❌ Erreur technique lors de la requête AJAX.</p>";
             });
     });
     </script>
