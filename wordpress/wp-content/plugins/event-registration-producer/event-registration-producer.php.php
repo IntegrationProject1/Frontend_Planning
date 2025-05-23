@@ -12,12 +12,11 @@ if (file_exists('/var/www/html/vendor/autoload.php')) {
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
-x
 
 
 function get_google_calendar_service() {
     $client = new \Google_Client();
-    $client->setAuthConfig(ABSPATH . 'wp-content/credentials/calendar-service-account.json');
+    $client->setAuthConfig('/var/www/html/wp-content/credentials/calendar-service-account.json');
     $client->setScopes(['https://www.googleapis.com/auth/calendar']);
     $client->setSubject('frontend@youmnimalha.be'); // domain-wide delegation
     return new Google_Service_Calendar($client);
