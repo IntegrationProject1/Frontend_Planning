@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../../vendor/autoload.php'; // Correct pad naar root/vendor
+require_once '/var/www/html/vendor/autoload.php';
 
 function get_google_calendar_service() {
     $client = new \Google_Client();
