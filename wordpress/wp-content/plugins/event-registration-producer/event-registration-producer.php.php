@@ -7,7 +7,7 @@ Author: Rayan Haddou
 */
 
 require_once plugin_dir_path(__FILE__) . 'includes/google_calendar_client.php';
-require_once ABSPATH . 'vendor/autoload.php';
+require_once '/var/www/html/vendor/autoload.php';
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
