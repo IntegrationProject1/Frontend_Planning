@@ -6,6 +6,8 @@
  * Author: Mathias Mertens
  */
 
+ require_once plugin_dir_path(__FILE__) . '/../send-controlroom-log.php'; // Load the controlroom log sender function
+
 // Laad de AMQP-bibliotheek
 require_once ABSPATH . 'vendor/autoload.php';
 
@@ -106,10 +108,14 @@ function rabbitmq_user_update_process_cron() {
 
             // Voer WP‑update uit
             $result = wp_update_user($update_data);
-            if (is_wp_error($result)) {
-                error_log('Fout bij update gebruiker #' . $user_id . ': ' . $result->get_error_message());
+           if (is_wp_error($result)) {
+    $errorMessage = $result->get_error_message(); // Get error message
+    error_log("Fout bij update gebruiker #{$user_id}: " . $errorMessage); // Log locally
+    send_controlroom_log('error', "Failed to update user #{$user_id} (UUID: {$uuid}): " . $errorMessage); // Send error log
+
             } else {
                 error_log("Gebruiker #{$user_id} bijgewerkt (UUID: {$uuid} op {$timeOfAction})");
+send_controlroom_log('success', "User #{$user_id} updated successfully (UUID: {$uuid}) at {$timeOfAction}.");// Send success log
 
                 // Optionele meta
                 if (isset($xml->PhoneNumber)) {
