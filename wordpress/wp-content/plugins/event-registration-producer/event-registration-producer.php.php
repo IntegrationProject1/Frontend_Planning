@@ -7,7 +7,7 @@ Author: Rayan Haddou
 */
 
 if (file_exists('/var/www/html/wp-content/plugins/event-registration-producer/includes/google-calendar-service.php')) {
-    require_once '/var/www/html/wp-content/plugins/event-registration-producer/includes/google-calendar-service.php'
+    require_once '/var/www/html/wp-content/plugins/event-registration-producer/includes/google-calendar-service.php';
 }
 
 if (file_exists('/var/www/html/vendor/autoload.php')) {
