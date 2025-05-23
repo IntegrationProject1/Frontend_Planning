@@ -8,6 +8,8 @@
  * @since   Inspiro 1.0.0
  */
 
+ require_once get_template_directory() . '/send-controlroom-log.php';
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
@@ -168,3 +170,19 @@ add_action('user_register', function($user_id) {
         send_controlroom_log('info', "New user registered with email: {$user->user_email}");
     }
 });
+
+// ✅ Log when a user registers via the frontend Ultimate Member form
+add_action('um_after_new_user_register', function($user_id) {
+    if (function_exists('send_controlroom_log')) {
+        $user = get_userdata($user_id);
+        send_controlroom_log('INFO', "Frontend registration (Ultimate Member) for email: {$user->user_email}");
+    }
+}, 10, 1);
+
+// ✅ Log when a user logs in via the Ultimate Member login form
+add_action('um_login_successful', function($user_id) {
+    if (function_exists('send_controlroom_log')) {
+        $user = get_userdata($user_id);
+        send_controlroom_log('INFO', "Frontend login (Ultimate Member) by: {$user->user_email}");
+    }
+}, 10, 1);

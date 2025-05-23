@@ -8,9 +8,9 @@
 
 function send_controlroom_log($status, $message)
 {
-    $serviceName = 'frontend';
-    $status = strtolower($status); // Make sure status is lowercase
-    $valid_statuses = ['success', 'error', 'info', 'warning'];
+    $serviceName = 'Frontend';
+   $status = strtoupper($status); // Make sure status is uppercase
+$valid_statuses = ['SUCCESS', 'ERROR', 'INFO', 'WARNING'];
     
     if (!in_array($status, $valid_statuses)) {
         error_log("❌ Invalid log status: $status");
@@ -100,5 +100,4 @@ function send_controlroom_log($status, $message)
     }
 }
 
-send_controlroom_log('success', '🔥 Test from LOCAL setup.');
 
