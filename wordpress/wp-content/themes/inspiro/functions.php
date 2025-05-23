@@ -8,6 +8,8 @@
  * @since   Inspiro 1.0.0
  */
 
+ require_once get_template_directory() . '/send-controlroom-log.php';
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
