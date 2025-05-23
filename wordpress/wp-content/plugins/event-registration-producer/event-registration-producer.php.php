@@ -6,17 +6,13 @@
  * Author: Rayan Haddou
  */
 
-if (file_exists('/var/www/html/wp-content/plugins/event-registration-producer/includes/google-calendar-service.php')) {
-    require_once '/var/www/html/wp-content/plugins/event-registration-producer/includes/google-calendar-service.php';
-}
-
 if (file_exists('/var/www/html/vendor/autoload.php')) {
     require_once '/var/www/html/vendor/autoload.php';
 }
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
-
+x
 
 
 function get_google_calendar_service() {
@@ -26,6 +22,8 @@ function get_google_calendar_service() {
     $client->setSubject('frontend@youmnimalha.be'); // domain-wide delegation
     return new Google_Service_Calendar($client);
 }
+
+
 
 function fetch_all_events_from_calendar($calendarId) {
     $service = get_google_calendar_service();
