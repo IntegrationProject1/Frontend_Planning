@@ -3,7 +3,7 @@
 Plugin Name: Google Calendar Sync
 Description: Synchroniseert events van Google Calendar naar een shortcode.
 Version: 1.0
-Author: Jouw naam
+Author: ?
 */
 
 add_shortcode('google_calendar', 'gcal_render_calendar');
