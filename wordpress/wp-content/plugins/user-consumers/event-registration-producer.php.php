@@ -1,10 +1,10 @@
 <?php
-/*
-Plugin Name: Test
-Description: Toon events en verwerk inschrijvingen met RabbitMQ & Google Calendar.
-Version: 1.0
-Author: Rayan Haddou
-*/
+/**
+ * Plugin Name: test
+ * Description: Toon events en verwerk inschrijvingen met RabbitMQ & Google Calendar.
+ * Version: 1.1
+ * Author: Rayan Haddou
+ */
 
 add_action('init', function() {
     static $once = false;
