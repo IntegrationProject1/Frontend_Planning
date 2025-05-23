@@ -2,6 +2,7 @@
 venv/
 __pycache__/
 *.pyc
+
 # Local WordPress environment
 wordpress/wp-content/uploads/
 wordpress/wp-content/cache/
@@ -17,3 +18,8 @@ attendify-local-test/
 expo-local-test/
 log_test.py
 
+wordpress/wp-content/credentials/calendar-service-account.json
+
+
+wordpress/credentials/calendar-service-account.json
+wordpress/credentials/calendar-service-account.json
