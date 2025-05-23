@@ -12,8 +12,7 @@ require_once ABSPATH . 'vendor/autoload.php';
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
 
-// Shortcode: toont events met inschrijfknop
-add_shortcode('expo_events', 'expo_render_events');
+
 
 function get_google_calendar_service() {
     $client = new \Google_Client();
@@ -221,3 +220,5 @@ function ajax_get_calendar_events() {
     wp_send_json($formatted);
 }
 
+// Shortcode: toont events met inschrijfknop
+add_shortcode('expo_events', 'expo_render_events');
