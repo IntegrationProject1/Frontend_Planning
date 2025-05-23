@@ -3,7 +3,7 @@
 Plugin Name: Event Registration Producer
 Description: Toon events en verwerk inschrijvingen met RabbitMQ & Google Calendar.
 Version: 1.0
-Author: Rayan
+Author: Rayan Haddou
 */
 
 require_once plugin_dir_path(__FILE__) . 'includes/google_calendar_client.php';
