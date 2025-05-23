@@ -19,6 +19,8 @@ WORKDIR /var/www/html
  
 # Use Composer to require your PHP AMQP library
 RUN composer require php-amqplib/php-amqplib
- 
+RUN composer require php-amqplib/php-amqplib google/apiclient
+
 # Ensure proper permissions
 RUN chown -R www-data:www-data /var/www/html
+
