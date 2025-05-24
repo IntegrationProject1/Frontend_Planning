@@ -244,12 +244,14 @@ function ajax_get_calendar_events() {
         $error_message = "❌ AJAX get_calendar_events error: " . $e->getMessage();
         error_log($error_message);
 
-        // Réponse AJAX côté navigateur
+        // ➕ Nouvelle réponse avec trace complète
         wp_send_json_error([
-            'message' => $error_message
+            'message' => $error_message,
+            'trace' => $e->getTraceAsString()
         ], 500);
     }
 }
+
 
 
 add_shortcode('expo_events', 'expo_render_events');
