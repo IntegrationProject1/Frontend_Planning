@@ -214,8 +214,22 @@ function ajax_get_calendar_events() {
 
     try {
         $events = fetch_all_events_from_calendar($calendarId);
+
+        if (!is_array($events)) {
+            throw new Exception("Le résultat de fetch_all_events_from_calendar n'est pas un tableau.");
+        }
+
+        if (empty($events)) {
+            throw new Exception("Aucun événement trouvé dans Google Calendar.");
+        }
+
         $formatted = [];
         foreach ($events as $event) {
+            if (!($event instanceof Google_Service_Calendar_Event)) {
+                error_log("⚠️ Un élément retourné n'est pas une instance valide de Google_Service_Calendar_Event");
+                continue;
+            }
+
             $formatted[] = [
                 'id' => $event->getId(),
                 'summary' => $event->getSummary(),
@@ -224,11 +238,18 @@ function ajax_get_calendar_events() {
                 'end' => $event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()
             ];
         }
+
         wp_send_json($formatted);
     } catch (Exception $e) {
-        error_log("❌ AJAX get_calendar_events error: " . $e->getMessage());
-        wp_send_json_error(['message' => 'Fout bij ophalen van Google Calendar events: ' . $e->getMessage()]);
+        $error_message = "❌ AJAX get_calendar_events error: " . $e->getMessage();
+        error_log($error_message);
+
+        // Réponse AJAX côté navigateur
+        wp_send_json_error([
+            'message' => $error_message
+        ], 500);
     }
 }
+
 
 add_shortcode('expo_events', 'expo_render_events');
