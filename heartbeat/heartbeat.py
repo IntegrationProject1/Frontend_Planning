@@ -20,7 +20,7 @@ MQ_PASS = os.getenv('RABBITMQ_PASSWORD', 'guest')
 MQ_VHOST = os.getenv('MQ_VHOST', '/')
 
 # Heartbeat settings
-SERVICE_ID = 'frontend'
+SERVICE_ID = 'Frontend'
 INSTANCE_NAME = os.getenv('INSTANCE_NAME', 'heartbeat_service')
 EXCHANGE = 'heartbeat_monitoring'
 QUEUE = 'controlroom.heartbeat.ping'
