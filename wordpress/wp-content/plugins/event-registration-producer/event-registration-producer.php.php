@@ -213,31 +213,34 @@ add_action('wp_ajax_get_calendar_events', 'ajax_get_calendar_events');
 add_action('wp_ajax_nopriv_get_calendar_events', 'ajax_get_calendar_events');
 
 function ajax_get_calendar_events() {
-    error_log("🎯 Début AJAX get_calendar_events");
     $calendarId = 'planning@youmnimalha.be';
 
     try {
         $events = fetch_all_events_from_calendar($calendarId);
 
         if (!is_array($events)) {
-            throw new Exception("Le résultat de fetch_all_events_from_calendar n'est pas un tableau.");
+            throw new Exception("Résultat invalide : pas un tableau.");
         }
 
         if (empty($events)) {
-            throw new Exception("Aucun événement trouvé dans Google Calendar.");
+            throw new Exception("Aucun événement trouvé.");
         }
 
         $formatted = [];
         foreach ($events as $event) {
             if (!($event instanceof Google_Service_Calendar_Event)) {
-                error_log("⚠️ Un élément retourné n'est pas une instance valide de Google_Service_Calendar_Event");
                 continue;
             }
+
+            // Essayez de parser la description comme JSON pour en extraire le champ 'description'
+            $descRaw = $event->getDescription();
+            $descDecoded = json_decode($descRaw, true);
+            $descFinal = is_array($descDecoded) && isset($descDecoded['description']) ? $descDecoded['description'] : $descRaw;
 
             $formatted[] = [
                 'id' => $event->getId(),
                 'summary' => $event->getSummary(),
-                'description' => $event->getDescription(),
+                'description' => $descFinal,
                 'start' => $event->getStart()->getDateTime() ?? $event->getStart()->getDate(),
                 'end' => $event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()
             ];
@@ -245,16 +248,12 @@ function ajax_get_calendar_events() {
 
         wp_send_json($formatted);
     } catch (Exception $e) {
-        $error_message = "❌ AJAX get_calendar_events error: " . $e->getMessage();
-        error_log($error_message);
-
-        // ➕ Nouvelle réponse avec trace complète
         wp_send_json_error([
-            'message' => $error_message,
-            'trace' => $e->getTraceAsString()
+            'message' => "Erreur lors de la récupération des événements : " . $e->getMessage()
         ], 500);
     }
 }
+
 
 
 
