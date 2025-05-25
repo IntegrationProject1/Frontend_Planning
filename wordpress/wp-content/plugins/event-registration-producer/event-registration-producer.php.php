@@ -232,10 +232,14 @@ function ajax_get_calendar_events() {
                 continue;
             }
 
-            // Essayez de parser la description comme JSON pour en extraire le champ 'description'
             $descRaw = $event->getDescription();
-            $descDecoded = json_decode($descRaw, true);
-            $descFinal = is_array($descDecoded) && isset($descDecoded['description']) ? $descDecoded['description'] : $descRaw;
+            $descFinal = $descRaw;
+
+            // Si c’est du JSON, on essaie d’extraire la vraie description
+            $json = json_decode($descRaw, true);
+            if (json_last_error() === JSON_ERROR_NONE && isset($json['description'])) {
+                $descFinal = $json['description'];
+            }
 
             $formatted[] = [
                 'id' => $event->getId(),
@@ -253,6 +257,7 @@ function ajax_get_calendar_events() {
         ], 500);
     }
 }
+
 
 
 
