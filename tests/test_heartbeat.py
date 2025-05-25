@@ -10,7 +10,7 @@ class TestHeartbeatMessage(unittest.TestCase):
 
     def test_xml_contains_servicename(self):
         xml = get_heartbeat_message()
-        self.assertIn("<ServiceName>frontend</ServiceName>", xml)
+        self.assertIn("<ServiceName>Frontend</ServiceName>", xml)
 
 
 class TestXMLGeneration(unittest.TestCase):
