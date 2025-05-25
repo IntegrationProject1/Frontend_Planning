@@ -1,7 +1,10 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+if (defined('DOING_AJAX') && DOING_AJAX) {
+    ini_set('display_errors', 0);
+    ini_set('display_startup_errors', 0);
+}
 error_reporting(E_ALL);
+
 
 /**
  * Plugin Name: Event Registration Producer
