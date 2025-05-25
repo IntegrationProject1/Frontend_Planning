@@ -21,7 +21,7 @@ function get_google_calendar_service() {
     $client = new \Google_Client();
     $client->setAuthConfig('/var/www/html/wp-content/credentials/calendar-service-account.json');
     $client->setScopes(['https://www.googleapis.com/auth/calendar']);
-    $client->setSubject('frontend@youmnimalha.be');
+    $client->setSubject('planning@youmnimalha.be');
     return new Google_Service_Calendar($client);
 }
 
@@ -138,7 +138,7 @@ function expo_handle_event_registration() {
     $service = get_google_calendar_service();
 
     try {
-        $event = $service->events->get('frontend@youmnimalha.be', $event_uuid);
+        $event = $service->events->get('planning@youmnimalha.be', $event_uuid);
         $attendees = $event->getAttendees();
         $user_uuid = get_user_meta($user_id, 'UUID', true);
         if (!$user_uuid) {
@@ -214,7 +214,7 @@ add_action('wp_ajax_nopriv_get_calendar_events', 'ajax_get_calendar_events');
 
 function ajax_get_calendar_events() {
     error_log("🎯 Début AJAX get_calendar_events");
-    $calendarId = 'frontend@youmnimalha.be';
+    $calendarId = 'planning@youmnimalha.be';
 
     try {
         $events = fetch_all_events_from_calendar($calendarId);
