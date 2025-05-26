@@ -198,7 +198,6 @@ function expo_register_event_only() {
     $user_id = get_current_user_id();
     $sessions = isset($_POST['sessions']) ? array_map('sanitize_text_field', $_POST['sessions']) : [];
 
-    // ❶ Vérifier si déjà inscrit à l'événement sans nouvelle session
     $already_event = (bool) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
@@ -206,12 +205,11 @@ function expo_register_event_only() {
         )
     );
     if ($already_event && empty($sessions)) {
-        // redirige avec popup “déjà inscrit”
-        wp_redirect(site_url("/evenementen/?already_registered=1"));
+
+        wp_redirect(site_url("/events/?already_registered=1"));
         exit;
     }
 
-    // ❷ Si pas encore inscrit à l'événement → on l’inscrit
     if (! $already_event) {
         $wpdb->insert(
             "{$wpdb->prefix}user_event",
@@ -341,7 +339,7 @@ function expo_register_event_only() {
         $channel->close();
         $connection->close();
 
-    wp_redirect(site_url("/evenementen/?registration=success"));
+    wp_redirect(site_url("/events/?registration=success"));
     exit;
 }
 
