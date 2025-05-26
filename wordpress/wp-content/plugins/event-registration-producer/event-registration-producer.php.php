@@ -85,7 +85,6 @@ function expo_render_events() {
     <?php endif; ?>
 
     <div id="expo-events">
-        <h2>Events</h2>
         <?php foreach ($calendarList->getItems() as $calendar): ?>
             <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
