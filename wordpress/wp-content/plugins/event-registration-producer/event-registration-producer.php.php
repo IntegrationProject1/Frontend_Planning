@@ -27,26 +27,25 @@ function get_google_calendar_service() {
     return new Google_Service_Calendar($client);
 }
 
-function fetch_all_events_from_calendar($calendarId) {
+function fetch_all_calendars_and_sessions() {
     $service = get_google_calendar_service();
+    $calendarList = $service->calendarList->listCalendarList();
     $allEvents = [];
-    $pageToken = null;
 
-    do {
-        $params = [
-            'singleEvents' => true,
-            'orderBy' => 'startTime',
-            'timeMin' => (new DateTime('2000-01-01'))->format(DateTime::RFC3339),
-            'pageToken' => $pageToken
+    foreach ($calendarList->getItems() as $calendar) {
+        $calendarId = $calendar->getId();
+        $eventItems = fetch_all_events_from_calendar($calendarId);
+
+        $allEvents[] = [
+            'calendarId' => $calendarId,
+            'calendarName' => $calendar->getSummary(),
+            'sessions' => $eventItems
         ];
-
-        $events = $service->events->listEvents($calendarId, $params);
-        $allEvents = array_merge($allEvents, $events->getItems());
-        $pageToken = $events->getNextPageToken();
-    } while ($pageToken);
+    }
 
     return $allEvents;
 }
+
 
 function expo_render_events() {
     ob_start();
@@ -106,14 +105,15 @@ function expo_render_event_detail() {
         return "<p>⚠️ Geen evenement geselecteerd.</p>";
     }
 
-    $eventId = sanitize_text_field($_GET['event_id']);
-    $calendarId = 'planning@youmnimalha.be';
+    $calendarId = sanitize_text_field($_GET['event_id']);
 
     try {
         $service = get_google_calendar_service();
-        $event = $service->events->get($calendarId, $eventId);
+        $calendar = $service->calendarList->get($calendarId);
+        $sessions = fetch_all_events_from_calendar($calendarId); // ← sessions uit dit agenda
+
     } catch (Exception $e) {
-        return "<p>❌ Kan evenement niet ophalen: " . esc_html($e->getMessage()) . "</p>";
+        return "<p>❌ Kan sessies of kalender niet ophalen: " . esc_html($e->getMessage()) . "</p>";
     }
 
     $user_id = get_current_user_id();
@@ -260,49 +260,49 @@ function expo_register_event_only() {
 }
 
 function ajax_get_calendar_events() {
-    $calendarId = 'planning@youmnimalha.be';
-
     try {
-        $events = fetch_all_events_from_calendar($calendarId);
-
-        if (!is_array($events)) {
-            throw new Exception("Résultat invalide : pas un tableau.");
-        }
-
-        if (empty($events)) {
-            throw new Exception("Aucun événement trouvé.");
-        }
-
+        $eventsByCalendar = fetch_all_calendars_and_sessions();
         $formatted = [];
-        foreach ($events as $event) {
-            if (!($event instanceof Google_Service_Calendar_Event)) {
-                continue;
-            }
 
-            $descRaw = $event->getDescription();
-            $descFinal = $descRaw;
+        foreach ($eventsByCalendar as $calendarData) {
+            $calendarId = $calendarData['calendarId'];
+            $calendarName = $calendarData['calendarName'];
+            $sessions = [];
 
-            $json = json_decode($descRaw, true);
-            if (json_last_error() === JSON_ERROR_NONE && isset($json['description'])) {
-                $descFinal = $json['description'];
+            foreach ($calendarData['sessions'] as $session) {
+                if (!($session instanceof Google_Service_Calendar_Event)) continue;
+
+                $descRaw = $session->getDescription();
+                $descFinal = $descRaw;
+                $json = json_decode($descRaw, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($json['description'])) {
+                    $descFinal = $json['description'];
+                }
+
+                $sessions[] = [
+                    'id' => $session->getId(),
+                    'summary' => $session->getSummary(),
+                    'description' => $descFinal,
+                    'start' => $session->getStart()->getDateTime() ?? $session->getStart()->getDate(),
+                    'end' => $session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()
+                ];
             }
 
             $formatted[] = [
-                'id' => $event->getId(),
-                'summary' => $event->getSummary(),
-                'description' => $descFinal,
-                'start' => $event->getStart()->getDateTime() ?? $event->getStart()->getDate(),
-                'end' => $event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()
+                'calendarId' => $calendarId,
+                'calendarName' => $calendarName,
+                'sessions' => $sessions
             ];
         }
 
         wp_send_json($formatted);
     } catch (Exception $e) {
         wp_send_json_error([
-            'message' => "Erreur lors de la récupération des événements : " . $e->getMessage()
+            'message' => "Erreur lors de la récupération des events + sessies : " . $e->getMessage()
         ], 500);
     }
 }
+
 
 
 add_shortcode('expo_event_detail', 'expo_render_event_detail');
