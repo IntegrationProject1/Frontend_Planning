@@ -89,7 +89,7 @@ function expo_render_events() {
             <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
-                <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
+                <form method="GET" action="<?php echo site_url('/event-details'); ?>">
                     <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
                     <button type="submit">View details</button>
                 </form>
@@ -104,78 +104,86 @@ function expo_render_events() {
 
 
 function expo_render_event_detail() {
-    if (! isset($_GET['event_id'])) {
-        return "<p>⚠️ No event selected.</p>";
+    if ( ! isset( $_GET['event_id'] ) ) {
+        return '<p>⚠️ No event selected.</p>';
     }
 
-    $calendarId = urldecode(sanitize_text_field($_GET['event_id']));
-    $sessions   = fetch_all_events_from_calendar($calendarId);
-    $user_id    = get_current_user_id();
+    $calendarId = urldecode( sanitize_text_field( $_GET['event_id'] ) );
+
+    $service = get_google_calendar_service();
+    $event   = $service->events->get( 'planning@youmnimalha.be', $calendarId );
+
+    $sessions = fetch_all_events_from_calendar( $calendarId );
+
+    $user_id = get_current_user_id();
     global $wpdb;
+    $is_event_reg = (bool) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
+        $user_id, $calendarId
+    ) );
+    $registered_sessions = $wpdb->get_col( $wpdb->prepare(
+        "SELECT session_id FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s",
+        $user_id, $calendarId
+    ) );
 
-    // ➊ Is user already registered to the event?
-    $is_event_reg = (bool) $wpdb->get_var(
-        $wpdb->prepare(
-            "SELECT COUNT(*) 
-             FROM {$wpdb->prefix}user_event 
-             WHERE user_id=%d AND event_uuid=%s",
-            $user_id, $calendarId
-        )
-    );
-
-    // ➋ Which sessions has the user already chosen?
-    $registered_sessions = $wpdb->get_col(
-        $wpdb->prepare(
-            "SELECT session_id 
-             FROM {$wpdb->prefix}user_session 
-             WHERE user_id=%d AND event_uuid=%s",
-            $user_id, $calendarId
-        )
-    );
-
-    ob_start(); ?>
+    ob_start();
+    ?>
     <div class="event-detail">
-      <h2>Event: <?= esc_html( get_google_calendar_service()
-                                  ->calendarList
-                                  ->get($calendarId)
-                                  ->getSummary() ) ?></h2>
 
-      <?php if ($is_event_reg): ?>
-        <p><em>You are already registered for this event.</em></p>
-      <?php endif; ?>
+      <h2 class="event-title">
+        <?= esc_html( $event->getSummary() ) ?>
+      </h2>
 
-      <h3>Sessions</h3>
-      <form method="POST" action="<?= admin_url('admin-post.php') ?>">
-        <input type="hidden" name="action"   value="submit_session_choices">
-        <input type="hidden" name="event_id" value="<?= esc_attr($calendarId) ?>">
+      <div class="event-detail__grid">
 
-        <?php foreach ($sessions as $session):
-          $sid      = $session->getId();
-          $disabled = in_array($sid, $registered_sessions)
-                      ? 'disabled title="Already registered"'
-                      : '';
-        ?>
-          <label>
-            <input type="checkbox"
-                   name="sessions[]"
-                   value="<?= esc_attr($sid) ?>"
-                   <?= $disabled ?>>
-            <strong><?= esc_html($session->getSummary()) ?></strong>
-            — <?= (new DateTime(
-                   $session->getStart()->getDateTime() 
-                   ?? $session->getStart()->getDate()
-                ))->format('Y-m-d H:i') ?>
-          </label><br><br>
-        <?php endforeach; ?>
+        <div class="event-info">
+          <p><strong>Date:</strong>
+            <?= (new DateTime( $event->getStart()->getDateTime() ))
+                ->format('Y-m-d H:i') ?>
+          </p>
+          <p><strong>Location:</strong>
+            <?= esc_html( $event->getLocation() ?: 'TBD' ) ?>
+          </p>
+        </div>
 
-        <button type="submit">
-          <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
-        </button>
-      </form>
+        <div class="sessions-list">
+          <?php if ( $is_event_reg ): ?>
+            <p><em>You are already registered for this event.</em></p>
+          <?php endif; ?>
+
+          <form method="POST" action="<?= admin_url('admin-post.php') ?>">
+            <input type="hidden" name="action"   value="submit_session_choices">
+            <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
+
+            <?php foreach ( $sessions as $session ): 
+              $sid      = $session->getId();
+              $disabled = in_array( $sid, $registered_sessions )
+                          ? 'disabled title="Already registered"'
+                          : '';
+            ?>
+              <label>
+                <input type="checkbox"
+                       name="sessions[]"
+                       value="<?= esc_attr( $sid ) ?>"
+                       <?= $disabled ?>>
+                <strong><?= esc_html( $session->getSummary() ) ?></strong>
+                — <?= (new DateTime( $session->getStart()->getDateTime() ))
+                    ->format('Y-m-d H:i') ?>
+              </label><br><br>
+            <?php endforeach; ?>
+
+            <button type="submit">
+              <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
+            </button>
+          </form>
+        </div>
+
+      </div>
     </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 
@@ -438,5 +446,47 @@ add_action( 'wp_enqueue_scripts', function(){
             grid-template-columns: 1fr;
           }
         }
+
+                
+        .event-detail {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+        }
+        .event-title {
+        text-align: center;
+        margin-bottom: 2rem;
+        }
+        .event-detail__grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        grid-gap: 2rem;
+        align-items: start;
+        }
+        /* Bloc “infos” à droite */
+        .event-info {
+        background: #f5f5f5;
+        padding: 1rem;
+        border-radius: .5rem;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+        }
+        .event-info p {
+        margin: .5rem 0;
+        }
+        /* Sessions à gauche, sans marge excessive */
+        .sessions-list form {
+        margin-top: 0;  /* remonte le formulaire */
+        }
+        /* Responsive : une colonne sur mobile */
+        @media (max-width: 768px) {
+        .event-detail__grid {
+            grid-template-columns: 1fr;
+        }
+        .event-info {
+            order: -1; /* affiche les infos avant la liste sur mobile */
+            margin-bottom: 2rem;
+        }
+        }
+
     " );
 }, 20 );
