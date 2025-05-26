@@ -72,15 +72,16 @@ function fetch_all_calendars_and_sessions() {
 function expo_render_events() {
     $service = get_google_calendar_service();
     $calendarList = $service->calendarList->listCalendarList();
-    
+
     ob_start();
     ?>
     <div id="expo-events">
         <h2>Evenementen</h2>
         <?php foreach ($calendarList->getItems() as $calendar): ?>
+            <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
-                <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getId()); ?></p>
+                <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getSummary()); ?></p>
                 <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
                     <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
                     <button type="submit">Bekijk details</button>
@@ -91,6 +92,7 @@ function expo_render_events() {
     <?php
     return ob_get_clean();
 }
+
 
 // ... (le reste des fonctions reste inchangé sauf celle-ci ci-dessous)
 
