@@ -131,27 +131,30 @@ function expo_render_event_detail() {
     ob_start();
     ?>
     <div class="event-detail">
-        <h2><?php echo esc_html($event->getSummary()); ?></h2>
-        <p><strong>Begintijd:</strong> <?php echo esc_html($event->getStart()->getDateTime() ?? $event->getStart()->getDate()); ?></p>
-        <p><strong>Eindtijd:</strong> <?php echo esc_html($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()); ?></p>
-        <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
+    <h2><?php echo esc_html($calendar->getSummary()); ?></h2>
+    <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getId()); ?></p>
 
-        <h3>Kies de sessies:</h3>
-        <?php if ($already_registered): ?>
-            <p><strong>✅ Je bent al ingeschreven voor dit evenement.</strong></p>
-        <?php else: ?>
-            <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-                <input type="hidden" name="action" value="submit_session_choices">
-                <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
+    <h3>Kies de sessies:</h3>
+    <?php if ($already_registered): ?>
+        <p><strong>✅ Je bent al ingeschreven voor dit evenement.</strong></p>
+    <?php else: ?>
+        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+            <input type="hidden" name="action" value="submit_session_choices">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($calendarId); ?>">
 
-                <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
-                <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
-                <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
+            <?php foreach ($sessions as $session): ?>
+                <label>
+                    <input type="checkbox" name="sessions[]" value="<?php echo esc_attr($session->getId()); ?>">
+                    <?php echo esc_html($session->getSummary()); ?> -
+                    <?php echo esc_html($session->getStart()->getDateTime() ?? $session->getStart()->getDate()); ?>
+                </label><br>
+            <?php endforeach; ?>
 
-                <button type="submit">Bevestig inschrijving</button>
-            </form>
-        <?php endif; ?>
-    </div>
+            <button type="submit">Bevestig inschrijving</button>
+        </form>
+    <?php endif; ?>
+</div>
+
 
     <script>
     document.addEventListener("DOMContentLoaded", function () {
