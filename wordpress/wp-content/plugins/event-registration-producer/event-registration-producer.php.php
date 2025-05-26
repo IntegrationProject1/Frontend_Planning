@@ -110,55 +110,73 @@ function expo_render_event_detail() {
     }
 
     $calendarId = urldecode(sanitize_text_field($_GET['event_id']));
-    $sessions = [];
+    $sessions    = fetch_all_events_from_calendar($calendarId);
+    $user_id     = get_current_user_id();
+    global $wpdb;
 
-    try {
-        $service = get_google_calendar_service();
-        $calendar = $service->calendarList->get($calendarId);
-        $sessions = fetch_all_events_from_calendar($calendarId);
-    } catch (Exception $e) {
-        return "<p>❌ Fout bij ophalen van event of sessies: " . esc_html($e->getMessage()) . "</p>";
-    }
+    // ➊ Est-ce que l'utilisateur est déjà inscrit à l'événement ?
+    $is_event_reg = (bool) $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
+            $user_id, $calendarId
+        )
+    );
 
-    ob_start();
-    ?>
+    // ➋ Quelles sessions sont déjà cochées dans la DB ?
+    $registered_sessions = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT session_id FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s",
+            $user_id, $calendarId
+        )
+    );
+
+    ob_start(); ?>
     <div class="event-detail">
-    <h2>Evenement: <?php echo esc_html($calendar->getSummary()); ?></h2>
-    <p><strong>Agenda-ID:</strong> <?php echo esc_html($calendarId); ?></p>
+      <h2>Evenement: <?= esc_html( get_google_calendar_service()->calendarList->get($calendarId)->getSummary() ) ?></h2>
 
-    <h3>📅 Sessies in dit evenement:</h3>
-
-    <?php if (empty($sessions)): ?>
-        <p>⚠️ Geen sessies gevonden in deze agenda.</p>
-    <?php else: ?>
-        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($calendarId); ?>">
-
-            <?php foreach ($sessions as $session): ?>
-                <label>
-                    <input type="checkbox" name="sessions[]" value="<?php echo esc_attr($session->getId()); ?>">
-                    <strong><?php echo esc_html($session->getSummary()); ?></strong><br>
-                    📅 <?php echo (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format('d/m/Y H:i'); ?> -
-                    <?php echo (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format('H:i'); ?>
-                </label>
-                <br><br>
-            <?php endforeach; ?>
-
-            <button type="submit">Bevestig inschrijving</button>
+      <?php // ➌ Si pas encore inscrit à l'événement, on affiche le bouton “S’inscrire” ?>
+      <?php if ( ! $is_event_reg ): ?>
+        <form method="POST" action="<?= admin_url('admin-post.php') ?>">
+          <input type="hidden" name="action"   value="submit_session_choices">
+          <input type="hidden" name="event_id" value="<?= esc_attr($calendarId) ?>">
+          <button type="submit">S’inscrire à l’événement</button>
         </form>
-    <?php endif; ?>
-</div>
+      <?php endif; ?>
 
+      <h3>📅 Sessies</h3>
+      <form method="POST" action="<?= admin_url('admin-post.php') ?>">
+        <input type="hidden" name="action"   value="submit_session_choices">
+        <input type="hidden" name="event_id" value="<?= esc_attr($calendarId) ?>">
+
+        <?php foreach ($sessions as $session): 
+          $sid      = $session->getId();
+          $disabled = in_array($sid, $registered_sessions) ? 'disabled title="Déjà inscrit"' : '';
+        ?>
+          <label>
+            <input type="checkbox"
+                   name="sessions[]"
+                   value="<?= esc_attr($sid) ?>"
+                   <?= $disabled ?>>
+            <strong><?= esc_html($session->getSummary()) ?></strong> —  
+            <?= (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))
+                ->format('d/m/Y H:i') ?>
+          </label><br><br>
+        <?php endforeach; ?>
+
+        <button type="submit">Valider mes choix</button>
+      </form>
+    </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 add_action('admin_post_submit_session_choices', 'expo_register_event_only');
 add_action('admin_post_nopriv_submit_session_choices', 'expo_register_event_only');
 
 function expo_register_event_only() {
+    global $wpdb;
     if (!is_user_logged_in()) {
         wp_die('Je moet ingelogd zijn om je te registreren.');
     }
@@ -171,25 +189,25 @@ function expo_register_event_only() {
     $user_id = get_current_user_id();
     $sessions = isset($_POST['sessions']) ? array_map('sanitize_text_field', $_POST['sessions']) : [];
 
-    global $wpdb;
-    $table = $wpdb->prefix . 'user_event';
-
-    $already = $wpdb->get_var($wpdb->prepare(
-    "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
-    $user_id,
-    $event_uuid
-));
-
-    if ($already && empty($sessions)) {
+    // ❶ Vérifier si déjà inscrit à l'événement sans nouvelle session
+    $already_event = (bool) $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
+            $user_id, $event_uuid
+        )
+    );
+    if ($already_event && empty($sessions)) {
+        // redirige avec popup “déjà inscrit”
         wp_redirect(site_url("/evenementen/?already_registered=1"));
         exit;
     }
 
-    if (!$already) {
-        $wpdb->insert($table, [
-            'user_id' => $user_id,
-            'event_uuid' => $event_uuid
-        ]);
+    // ❷ Si pas encore inscrit à l'événement → on l’inscrit
+    if (! $already_event) {
+        $wpdb->insert(
+            "{$wpdb->prefix}user_event",
+            [ 'user_id' => $user_id, 'event_uuid' => $event_uuid ]
+        );
     }
 
 
@@ -256,20 +274,23 @@ function expo_register_event_only() {
     $session_table = $wpdb->prefix . 'user_session';
 
 
-    foreach ($sessions as $session_id) {
-        $already_session = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $session_table WHERE user_id = %d AND session_id = %s",
-            $user_id,
-            $session_id
-        ));
-
-        if (!$already_session) {
-            $wpdb->insert($session_table, [
-                'user_id' => $user_id,
+    foreach ( $sessions as $session_id ) {
+        $already_session = (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s AND session_id=%s",
+            $user_id, $event_uuid, $session_id
+        ) );
+        if ( ! $already_session ) {
+            $wpdb->insert(
+                "{$wpdb->prefix}user_session",
+                [
+                'user_id'    => $user_id,
+                'event_uuid' => $event_uuid,
                 'session_id' => $session_id
-            ]);
+                ]
+            );
         }
     }
+
 
 
     foreach ($sessions as $session_id) {
