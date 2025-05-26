@@ -147,6 +147,7 @@ function expo_render_event_detail() {
 
 
 add_action('admin_post_submit_session_choices', 'expo_register_event_only');
+add_action('admin_post_nopriv_submit_session_choices', 'expo_register_event_only');
 
 function expo_register_event_only() {
     if (!is_user_logged_in()) {
