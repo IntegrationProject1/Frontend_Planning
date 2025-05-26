@@ -75,6 +75,15 @@ function expo_render_events() {
 
     ob_start();
     ?>
+
+    <?php if (isset($_GET['already_registered']) && $_GET['already_registered'] == 1): ?>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            alert("Je bent al ingeschreven voor dit evenement.");
+        });
+    </script>
+    <?php endif; ?>
+
     <div id="expo-events">
         <h2>Evenementen</h2>
         <?php foreach ($calendarList->getItems() as $calendar): ?>
@@ -93,7 +102,7 @@ function expo_render_events() {
 }
 
 
-// ... (le reste des fonctions reste inchangé sauf celle-ci ci-dessous)
+
 
 function expo_render_event_detail() {
     if (!isset($_GET['event_id'])) {
@@ -166,10 +175,15 @@ function expo_register_event_only() {
     $table = $wpdb->prefix . 'user_event';
 
     $already = $wpdb->get_var($wpdb->prepare(
-        "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
-        $user_id,
-        $event_uuid
-    ));
+    "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
+    $user_id,
+    $event_uuid
+));
+
+    if ($already && empty($sessions)) {
+        wp_redirect(site_url("/evenementen/?already_registered=1"));
+        exit;
+    }
 
     if (!$already) {
         $wpdb->insert($table, [
@@ -178,6 +192,7 @@ function expo_register_event_only() {
         ]);
     }
 
+
     $host = getenv('RABBITMQ_HOST');
         $port = getenv('RABBITMQ_PORT');
         $user = getenv('RABBITMQ_USER');
@@ -185,7 +200,7 @@ function expo_register_event_only() {
 
         $connection = new AMQPStreamConnection($host, $port, $user, $pass);
         $channel = $connection->channel();
-        
+
     try {
         $service = get_google_calendar_service();
         $event = $service->events->get('planning@youmnimalha.be', $event_uuid);
@@ -240,20 +255,22 @@ function expo_register_event_only() {
 
     $session_table = $wpdb->prefix . 'user_session';
 
+
     foreach ($sessions as $session_id) {
-        $already = $wpdb->get_var($wpdb->prepare(
+        $already_session = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM $session_table WHERE user_id = %d AND session_id = %s",
             $user_id,
             $session_id
         ));
 
-        if (!$already) {
+        if (!$already_session) {
             $wpdb->insert($session_table, [
                 'user_id' => $user_id,
                 'session_id' => $session_id
             ]);
         }
     }
+
 
     foreach ($sessions as $session_id) {
     try {
