@@ -291,3 +291,6 @@ function ajax_get_calendar_events() {
 
 add_shortcode('expo_event_detail', 'expo_render_event_detail');
 add_shortcode('expo_events', 'expo_render_events');
+
+add_action('wp_ajax_get_calendar_events', 'ajax_get_calendar_events');
+add_action('wp_ajax_nopriv_get_calendar_events', 'ajax_get_calendar_events');
