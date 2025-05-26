@@ -73,29 +73,45 @@ function fetch_all_calendars_and_sessions() {
 
 
 function expo_render_events() {
-    $service = get_google_calendar_service();
+    $service      = get_google_calendar_service();
     $calendarList = $service->calendarList->listCalendarList();
 
     ob_start();
     ?>
-
-    <?php if (isset($_GET['already_registered']) && $_GET['already_registered'] == 1): ?>
-    <script>
-        window.addEventListener('DOMContentLoaded', () => {
-            alert("You are already registered for this event.");
-        });
-    </script>
-    <?php endif; ?>
-
     <div id="expo-events">
-        <?php foreach ($calendarList->getItems() as $calendar): 
-            if ( $calendar->getId() === 'planning@youmnimalha.be' ) {
-          continue;
-        }
-        ?>
-            <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
+        <?php foreach ($calendarList->getItems() as $calendar):
+            // on skip l'agenda “planning@youmnimalha.be”
+            if ($calendar->getId() === 'planning@youmnimalha.be') {
+                continue;
+            }
+            // on ne montre que les calendriers dont on est propriétaire
+            if ($calendar->getAccessRole() !== 'owner') {
+                continue;
+            }
+
+            // on récupère toutes les sessions pour ce calendrier
+            $sessions = fetch_all_events_from_calendar($calendar->getId());
+            $first    = reset($sessions);
+
+            // fallback si pas de sessions
+            if ($first) {
+                $start_dt = new DateTime(
+                    $first->getStart()->getDateTime() 
+                    ?? $first->getStart()->getDate()
+                );
+                $date_str = $start_dt->format('Y-m-d H:i');
+                $location = $first->getLocation() ?: 'TBD';
+            } else {
+                $date_str = 'TBD';
+                $location = 'TBD';
+            }
+            ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
+                <p class="event-meta">
+                  <strong>When:</strong> <?php echo esc_html($date_str); ?><br>
+                  <strong>Where:</strong> <?php echo esc_html($location); ?>
+                </p>
                 <form method="GET" action="<?php echo site_url('/event-details'); ?>">
                     <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
                     <button type="submit">View details</button>
@@ -106,6 +122,7 @@ function expo_render_events() {
     <?php
     return ob_get_clean();
 }
+
 
 
 
@@ -476,11 +493,11 @@ add_action( 'wp_enqueue_scripts', function(){
         .event-detail {
             max-width: 800px;
             margin: 0 auto;
-            padding: 1rem;
+            padding: 0.5rem 1rem;
             }
             .event-title {
             text-align: center;
-            margin: 1rem 0 2rem; /* Titre un peu plus haut */
+            margin: 0.5rem 0 2rem; /* Titre un peu plus haut */
             }
             .event-detail__grid {
             display: grid;
@@ -488,7 +505,6 @@ add_action( 'wp_enqueue_scripts', function(){
             grid-gap: 2rem;
             align-items: start;
             }
-            /* Sessions à gauche */
             .sessions-list h3 {
             font-size: 1.25rem;
             margin-bottom: 1rem;
@@ -497,7 +513,6 @@ add_action( 'wp_enqueue_scripts', function(){
             /* remonte la liste pour être plus près du titre */
             margin-top: 0;
             }
-            /* Infos à droite */
             .event-info {
             background: #f5f5f5;
             padding: 1rem;
