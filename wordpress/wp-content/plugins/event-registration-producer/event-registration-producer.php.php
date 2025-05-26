@@ -5,7 +5,6 @@ if (defined('DOING_AJAX') && DOING_AJAX) {
 }
 error_reporting(E_ALL);
 
-
 /**
  * Plugin Name: Event Registration Producer
  * Description: Toon events en verwerk inschrijvingen met RabbitMQ & Google Calendar.
@@ -53,7 +52,7 @@ function expo_render_events() {
     ob_start();
     ?>
     <div id="expo-events">
-        <p>Evenementen laden...</p>
+        <p>Evenementen worden geladen...</p>
     </div>
 
     <script>
@@ -61,14 +60,14 @@ function expo_render_events() {
         fetch("<?php echo admin_url('admin-ajax.php'); ?>?action=get_calendar_events")
             .then(res => res.json()
                 .catch(e => {
-                    console.error("❌ JSON parsing failed:", e);
-                    return { success: false, data: { message: "Invalide JSON reçu." } };
+                    console.error("❌ JSON-parserfout:", e);
+                    return { success: false, data: { message: "Ongeldige JSON ontvangen." } };
                 })
             )
             .then(data => {
                 if (!data || data.success === false) {
-                    console.error("❌ Erreur AJAX:", data?.data?.message || "Réponse vide ou invalide");
-                    document.getElementById("expo-events").innerHTML = "<p>❌ Erreur: " + (data?.data?.message || "Inconnue") + "</p>";
+                    console.error("❌ AJAX-fout:", data?.data?.message || "Lege of ongeldige reactie");
+                    document.getElementById("expo-events").innerHTML = "<p>❌ Fout: " + (data?.data?.message || "Onbekend") + "</p>";
                     return;
                 }
 
@@ -82,7 +81,7 @@ function expo_render_events() {
                         <h3>${event.summary}</h3>
                         <p>${event.description || "Geen beschrijving."}</p>
                         <p><strong>Start:</strong> ${event.start}</p>
-                        <form method="GET" action="${"<?php echo site_url('/evenement-detail'); ?>"}">
+                        <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
                             <input type="hidden" name="event_id" value="${event.id}">
                             <button type="submit">Inschrijven</button>
                         </form>
@@ -91,8 +90,8 @@ function expo_render_events() {
                 });
             })
             .catch(err => {
-                console.error("❌ AJAX fetch crash:", err);
-                document.getElementById("expo-events").innerHTML = "<p>❌ Erreur technique lors de la requête AJAX.</p>";
+                console.error("❌ AJAX-verzoek fout:", err);
+                document.getElementById("expo-events").innerHTML = "<p>❌ Technische fout bij ophalen van evenementen.</p>";
             });
     });
     </script>
@@ -100,54 +99,101 @@ function expo_render_events() {
     return ob_get_clean();
 }
 
-add_action('admin_post_register_for_event', 'expo_handle_event_registration');
-add_action('admin_post_nopriv_register_for_event', 'expo_handle_event_registration');
+// ... (le reste des fonctions reste inchangé sauf celle-ci ci-dessous)
 
-function expo_handle_event_registration() {
-    if (!is_user_logged_in()) {
-        wp_die('Je moet ingelogd zijn om je te registreren voor een event.');
+function expo_render_event_detail() {
+    if (!isset($_GET['event_id'])) {
+        return "<p>⚠️ Geen evenement geselecteerd.</p>";
     }
 
-    if (!isset($_POST['event_uuid'])) {
+    $eventId = sanitize_text_field($_GET['event_id']);
+    $calendarId = 'planning@youmnimalha.be';
+
+    try {
+        $service = get_google_calendar_service();
+        $event = $service->events->get($calendarId, $eventId);
+    } catch (Exception $e) {
+        return "<p>❌ Kan evenement niet ophalen: " . esc_html($e->getMessage()) . "</p>";
+    }
+
+    ob_start();
+    ?>
+    <div class="event-detail">
+        <h2><?php echo esc_html($event->getSummary()); ?></h2>
+        <p><strong>Begintijd:</strong> <?php echo esc_html($event->getStart()->getDateTime() ?? $event->getStart()->getDate()); ?></p>
+        <p><strong>Eindtijd:</strong> <?php echo esc_html($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()); ?></p>
+        <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
+
+        <h3>Kies de sessies:</h3>
+        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+            <input type="hidden" name="action" value="submit_session_choices">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
+
+            <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
+            <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
+            <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
+
+            <button type="submit">Bevestig inschrijving</button>
+        </form>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("confirmed") === "1") {
+            alert("✅ Je bent succesvol ingeschreven voor dit evenement!");
+        }
+    });
+    </script>
+    <?php
+    return ob_get_clean();
+}
+
+add_action('admin_post_submit_session_choices', 'expo_register_event_only');
+
+function expo_register_event_only() {
+    if (!is_user_logged_in()) {
+        wp_die('Je moet ingelogd zijn om je te registreren.');
+    }
+
+    if (!isset($_POST['event_id'])) {
         wp_die('Ongeldige aanvraag.');
     }
 
+    $event_uuid = sanitize_text_field($_POST['event_id']);
     $user_id = get_current_user_id();
-    $event_uuid = sanitize_text_field($_POST['event_uuid']);
-    $event_start = sanitize_text_field($_POST['event_start']);
-    $event_end = sanitize_text_field($_POST['event_end']);
 
     global $wpdb;
     $table = $wpdb->prefix . 'user_event';
 
-    $existing = $wpdb->get_var($wpdb->prepare(
+    $already = $wpdb->get_var($wpdb->prepare(
         "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
         $user_id,
         $event_uuid
     ));
 
-    if ($existing == 0) {
+    if (!$already) {
         $wpdb->insert($table, [
             'user_id' => $user_id,
             'event_uuid' => $event_uuid
         ]);
     }
 
-    $service = get_google_calendar_service();
-
     try {
+        $service = get_google_calendar_service();
         $event = $service->events->get('planning@youmnimalha.be', $event_uuid);
         $attendees = $event->getAttendees();
+
         $user_uuid = get_user_meta($user_id, 'UUID', true);
         if (!$user_uuid) {
             $user_uuid = (new DateTime())->format('Y-m-d\TH:i:s.u\Z');
             update_user_meta($user_id, 'UUID', $user_uuid);
         }
-        $attendee_uuids = [$user_uuid];
 
+        $attendee_uuids = [$user_uuid];
         if ($attendees) {
             foreach ($attendees as $attendee) {
-                if (!empty($attendee->getEmail())) {
+                if ($attendee->getEmail()) {
                     $wp_user = get_user_by('email', $attendee->getEmail());
                     if ($wp_user) {
                         $uuid = get_user_meta($wp_user->ID, 'UUID', true);
@@ -161,10 +207,10 @@ function expo_handle_event_registration() {
 
         $xml = new SimpleXMLElement('<UpdateEvent/>');
         $xml->addChild('EventUUID', $event_uuid);
-        $xml->addChild('EventName', sanitize_text_field($_POST['event_summary']));
-        $xml->addChild('EventDescription', sanitize_text_field($_POST['event_description']));
-        $xml->addChild('StartDateTime', (new DateTime($event_start))->format(DateTime::ATOM));
-        $xml->addChild('EndDateTime', (new DateTime($event_end))->format(DateTime::ATOM));
+        $xml->addChild('EventName', $event->getSummary());
+        $xml->addChild('EventDescription', $event->getDescription());
+        $xml->addChild('StartDateTime', (new DateTime($event->getStart()->getDateTime() ?? $event->getStart()->getDate()))->format(DateTime::ATOM));
+        $xml->addChild('EndDateTime', (new DateTime($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()))->format(DateTime::ATOM));
         $xml->addChild('EventLocation', $event->getLocation() ?: 'Onbekende locatie');
         $xml->addChild('Organisator', $event->getCreator()->getEmail() ?: 'onbekend');
         $xml->addChild('Capacity', 100);
@@ -172,43 +218,30 @@ function expo_handle_event_registration() {
 
         $reg = $xml->addChild('RegisteredUsers');
         foreach ($attendee_uuids as $uuid) {
-            $userNode = $reg->addChild('User');
-            $userNode->addChild('UUID', $uuid);
+            $reg->addChild('User')->addChild('UUID', $uuid);
         }
 
-        try {
-            $host     = getenv('RABBITMQ_HOST');
-            $port     = getenv('RABBITMQ_PORT');
-            $user     = getenv('RABBITMQ_USER');
-            $password = getenv('RABBITMQ_PASSWORD');
-            $exchange = 'event';
-            $routing  = 'planning.event.update';
+        $host = getenv('RABBITMQ_HOST');
+        $port = getenv('RABBITMQ_PORT');
+        $user = getenv('RABBITMQ_USER');
+        $pass = getenv('RABBITMQ_PASSWORD');
 
-            $connection = new AMQPStreamConnection($host, $port, $user, $password);
-            $channel    = $connection->channel();
-
-            $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
-            $channel->basic_publish($msg, $exchange, $routing);
-
-            error_log("✅ Event registratie verstuurd naar RabbitMQ: {$event_uuid}");
-
-            $channel->close();
-            $connection->close();
-        } catch (Exception $e) {
-            error_log("❌ RabbitMQ fout: " . $e->getMessage());
-        }
+        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
+        $channel = $connection->channel();
+        $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
+        $channel->basic_publish($msg, 'event', 'planning.event.update');
+        $channel->basic_publish($msg, 'event', 'kassa_event_update');
+        $channel->basic_publish($msg, 'event', 'crm_event_update');
+        $channel->close();
+        $connection->close();
 
     } catch (Exception $e) {
-        error_log("❌ Fout bij ophalen van Google Calendar event: " . $e->getMessage());
-        wp_die('Er ging iets mis bij het ophalen van het event.');
+        error_log("❌ Fout bij verwerking van event registratie: " . $e->getMessage());
     }
 
-    wp_redirect($_SERVER['HTTP_REFERER'] . '?registration=success');
+    wp_redirect(site_url("/evenement-detail/?event_id=$event_uuid&confirmed=1"));
     exit;
 }
-
-add_action('wp_ajax_get_calendar_events', 'ajax_get_calendar_events');
-add_action('wp_ajax_nopriv_get_calendar_events', 'ajax_get_calendar_events');
 
 function ajax_get_calendar_events() {
     $calendarId = 'planning@youmnimalha.be';
@@ -233,7 +266,6 @@ function ajax_get_calendar_events() {
             $descRaw = $event->getDescription();
             $descFinal = $descRaw;
 
-            // Si c’est du JSON, on essaie d’extraire la vraie description
             $json = json_decode($descRaw, true);
             if (json_last_error() === JSON_ERROR_NONE && isset($json['description'])) {
                 $descFinal = $json['description'];
@@ -257,47 +289,5 @@ function ajax_get_calendar_events() {
 }
 
 
-function expo_render_event_detail() {
-    if (!isset($_GET['event_id'])) {
-        return "<p>⚠️ Aucun événement sélectionné.</p>";
-    }
-
-    $eventId = sanitize_text_field($_GET['event_id']);
-    $calendarId = 'planning@youmnimalha.be';
-
-    try {
-        $service = get_google_calendar_service();
-        $event = $service->events->get($calendarId, $eventId);
-    } catch (Exception $e) {
-        return "<p>❌ Impossible de récupérer l’événement : " . esc_html($e->getMessage()) . "</p>";
-    }
-
-    ob_start();
-    ?>
-    <div class="event-detail">
-        <h2><?php echo esc_html($event->getSummary()); ?></h2>
-        <p><strong>Début :</strong> <?php echo esc_html($event->getStart()->getDateTime() ?? $event->getStart()->getDate()); ?></p>
-        <p><strong>Fin :</strong> <?php echo esc_html($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()); ?></p>
-        <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
-
-        <h3>Choisissez les sessions :</h3>
-        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
-
-            <label><input type="checkbox" name="sessions[]" value="session1"> Session 1 - Introduction</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session2"> Session 2 - Pratique</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session3"> Session 3 - Q&A</label><br>
-
-            <button type="submit">Valider l'inscription</button>
-        </form>
-    </div>
-    <?php
-    return ob_get_clean();
-}
-
 add_shortcode('expo_event_detail', 'expo_render_event_detail');
-
-
-
 add_shortcode('expo_events', 'expo_render_events');
