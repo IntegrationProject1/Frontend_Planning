@@ -137,16 +137,20 @@ function expo_render_event_detail() {
         <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
 
         <h3>Kies de sessies:</h3>
-        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
+        <?php if ($already_registered): ?>
+            <p><strong>✅ Je bent al ingeschreven voor dit evenement.</strong></p>
+        <?php else: ?>
+            <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+                <input type="hidden" name="action" value="submit_session_choices">
+                <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
 
-            <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
 
-            <button type="submit">Bevestig inschrijving</button>
-        </form>
+                <button type="submit">Bevestig inschrijving</button>
+            </form>
+        <?php endif; ?>
     </div>
 
     <script>
