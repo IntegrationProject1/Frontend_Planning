@@ -27,6 +27,28 @@ function get_google_calendar_service() {
     return new Google_Service_Calendar($client);
 }
 
+function fetch_all_events_from_calendar($calendarId) {
+    $service = get_google_calendar_service();
+    $allEvents = [];
+    $pageToken = null;
+
+    do {
+        $params = [
+            'singleEvents' => true,
+            'orderBy' => 'startTime',
+            'timeMin' => (new DateTime('2000-01-01'))->format(DateTime::RFC3339),
+            'pageToken' => $pageToken
+        ];
+
+        $events = $service->events->listEvents($calendarId, $params);
+        $allEvents = array_merge($allEvents, $events->getItems());
+        $pageToken = $events->getNextPageToken();
+    } while ($pageToken);
+
+    return $allEvents;
+}
+
+
 function fetch_all_calendars_and_sessions() {
     $service = get_google_calendar_service();
     $calendarList = $service->calendarList->listCalendarList();
