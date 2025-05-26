@@ -125,8 +125,6 @@ function expo_render_events() {
 
 
 
-
-
 function expo_render_event_detail() {
     if ( ! isset( $_GET['event_id'] ) ) {
         return '<p>⚠️ No event selected.</p>';
@@ -137,28 +135,31 @@ function expo_render_event_detail() {
 
     try {
         $calendar = $service->calendarList->get( $calendarId );
-    } catch (Exception $e) {
+    } catch ( Exception $e ) {
         return '<p>❌ Unable to load event details.</p>';
     }
-    $title = $calendar->getSummary();
 
+    $title    = $calendar->getSummary();
     $sessions = fetch_all_events_from_calendar( $calendarId );
     $first    = reset( $sessions );
+
     if ( $first ) {
-        $start = ( new DateTime( $first->getStart()->getDateTime() ?? $first->getStart()->getDate() ) )
-                 ->format( 'Y-m-d H:i' );
+        $start = ( new DateTime(
+            $first->getStart()->getDateTime() 
+            ?? $first->getStart()->getDate()
+        ) )->format( 'Y-m-d H:i' );
         $loc   = $first->getLocation() ?: 'TBD';
     } else {
         $start = $loc = 'TBD';
     }
 
-    $user_id = get_current_user_id();
+    $user_id              = get_current_user_id();
     global $wpdb;
-    $is_event_reg = (bool) $wpdb->get_var( $wpdb->prepare(
+    $is_event_reg         = (bool) $wpdb->get_var( $wpdb->prepare(
         "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
         $user_id, $calendarId
     ) );
-    $registered_sessions = $wpdb->get_col( $wpdb->prepare(
+    $registered_sessions  = $wpdb->get_col( $wpdb->prepare(
         "SELECT session_id FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s",
         $user_id, $calendarId
     ) );
@@ -167,21 +168,21 @@ function expo_render_event_detail() {
     <div class="event-detail">
       <h2 class="event-title"><?= esc_html( $title ) ?></h2>
 
-      <div class="event-detail__grid">
-        <div class="sessions-list">
-          <h3>Sessions</h3>
-          <?php if ( $is_event_reg ): ?>
-            <p><em>You are already registered for this event.</em></p>
-          <?php endif; ?>
+      <form method="POST" action="<?= esc_url( admin_url('admin-post.php') ) ?>">
+        <input type="hidden" name="action"   value="submit_session_choices">
+        <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
 
-          <form method="POST" action="<?= esc_url( admin_url('admin-post.php') ) ?>">
-            <input type="hidden" name="action"   value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
+        <div class="event-detail__grid">
+          <div class="sessions-list">
+            <h3>Sessions</h3>
+            <?php if ( $is_event_reg ): ?>
+              <p><em>You are already registered for this event.</em></p>
+            <?php endif; ?>
 
             <?php foreach ( $sessions as $session ) :
               $sid      = $session->getId();
-              $disabled = in_array( $sid, $registered_sessions )
-                          ? 'disabled title="Already registered"'
+              $disabled = in_array( $sid, $registered_sessions ) 
+                          ? 'disabled title="Already registered"' 
                           : '';
             ?>
               <label>
@@ -191,33 +192,30 @@ function expo_render_event_detail() {
                        <?= $disabled ?>>
                 <strong><?= esc_html( $session->getSummary() ) ?></strong>
                 — <?= esc_html( (new DateTime(
-                        $session->getStart()->getDateTime()
+                        $session->getStart()->getDateTime() 
                         ?? $session->getStart()->getDate()
                       ))->format('Y-m-d H:i') ) ?>
               </label><br><br>
             <?php endforeach; ?>
-          </form>
+          </div>
+
+          <div class="event-info">
+            <p><strong>Date:</strong> <?= esc_html( $start ) ?></p>
+            <p><strong>Location:</strong> <?= esc_html( $loc ) ?></p>
+          </div>
         </div>
 
-        <div class="event-info">
-          <p><strong>Date:</strong> <?= esc_html( $start ) ?></p>
-          <p><strong>Location:</strong> <?= esc_html( $loc ) ?></p>
-        </div>
-      </div>
-
-      <div class="event-actions">
-        <form method="POST" action="<?= esc_url( admin_url('admin-post.php') ) ?>">
-          <input type="hidden" name="action"   value="submit_session_choices">
-          <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
+        <div class="event-actions">
           <button type="submit">
             <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 
