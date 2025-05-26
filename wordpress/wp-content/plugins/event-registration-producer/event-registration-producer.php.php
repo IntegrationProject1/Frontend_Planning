@@ -394,3 +394,50 @@ add_shortcode('expo_events', 'expo_render_events');
 
 add_action('wp_ajax_get_calendar_events', 'ajax_get_calendar_events');
 add_action('wp_ajax_nopriv_get_calendar_events', 'ajax_get_calendar_events');
+
+/**
+ * Enqueue grid CSS for two-columns layout on the Events page
+ */
+add_action( 'wp_enqueue_scripts', function(){
+    wp_register_style( 'expo-events-css', false );
+    wp_enqueue_style( 'expo-events-css' );
+    wp_add_inline_style( 'expo-events-css', "
+        #expo-events {
+          display: grid;
+          grid-template-columns: repeat(2,1fr);
+          grid-gap: 2rem;
+          justify-items: center;
+          padding: 2rem;
+        }
+        .event-box {
+          max-width: 350px;
+          width: 100%;
+          background: #f5f5f5;
+          padding: 1.5rem;
+          border-radius: .5rem;
+          text-align: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .event-box h3 {
+          margin-bottom: 1rem;
+          font-size: 1.25rem;
+        }
+        .event-box button {
+          padding: .75rem 1.5rem;
+          border: none;
+          background: #0073aa;
+          color: #fff;
+          font-weight: bold;
+          border-radius: .25rem;
+          cursor: pointer;
+        }
+        .event-box button:hover {
+          background: #005177;
+        }
+        @media (max-width: 768px) {
+          #expo-events {
+            grid-template-columns: 1fr;
+          }
+        }
+    " );
+}, 20 );
