@@ -82,15 +82,11 @@ function expo_render_events() {
                         <h3>${event.summary}</h3>
                         <p>${event.description || "Geen beschrijving."}</p>
                         <p><strong>Start:</strong> ${event.start}</p>
-                        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-                            <input type="hidden" name="action" value="register_for_event">
-                            <input type="hidden" name="event_uuid" value="${event.id}">
-                            <input type="hidden" name="event_summary" value="${event.summary}">
-                            <input type="hidden" name="event_description" value="${event.description}">
-                            <input type="hidden" name="event_start" value="${event.start}">
-                            <input type="hidden" name="event_end" value="${event.end}">
+                        <form method="GET" action="/evenement-detail">
+                            <input type="hidden" name="event_id" value="${event.id}">
                             <button type="submit">Inschrijven</button>
                         </form>
+
                     `;
                     container.appendChild(div);
                 });
@@ -262,6 +258,46 @@ function ajax_get_calendar_events() {
 }
 
 
+function expo_render_event_detail() {
+    if (!isset($_GET['event_id'])) {
+        return "<p>⚠️ Aucun événement sélectionné.</p>";
+    }
+
+    $eventId = sanitize_text_field($_GET['event_id']);
+    $calendarId = 'planning@youmnimalha.be';
+
+    try {
+        $service = get_google_calendar_service();
+        $event = $service->events->get($calendarId, $eventId);
+    } catch (Exception $e) {
+        return "<p>❌ Impossible de récupérer l’événement : " . esc_html($e->getMessage()) . "</p>";
+    }
+
+    ob_start();
+    ?>
+    <div class="event-detail">
+        <h2><?php echo esc_html($event->getSummary()); ?></h2>
+        <p><strong>Début :</strong> <?php echo esc_html($event->getStart()->getDateTime() ?? $event->getStart()->getDate()); ?></p>
+        <p><strong>Fin :</strong> <?php echo esc_html($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()); ?></p>
+        <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
+
+        <h3>Choisissez les sessions :</h3>
+        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+            <input type="hidden" name="action" value="submit_session_choices">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
+
+            <label><input type="checkbox" name="sessions[]" value="session1"> Session 1 - Introduction</label><br>
+            <label><input type="checkbox" name="sessions[]" value="session2"> Session 2 - Pratique</label><br>
+            <label><input type="checkbox" name="sessions[]" value="session3"> Session 3 - Q&A</label><br>
+
+            <button type="submit">Valider l'inscription</button>
+        </form>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+add_shortcode('expo_event_detail', 'expo_render_event_detail');
 
 
 
