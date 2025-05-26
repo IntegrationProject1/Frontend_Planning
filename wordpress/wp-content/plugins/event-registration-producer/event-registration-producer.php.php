@@ -79,20 +79,20 @@ function expo_render_events() {
     <?php if (isset($_GET['already_registered']) && $_GET['already_registered'] == 1): ?>
     <script>
         window.addEventListener('DOMContentLoaded', () => {
-            alert("Je bent al ingeschreven voor dit evenement.");
+            alert("You are already registered for this event.");
         });
     </script>
     <?php endif; ?>
 
     <div id="expo-events">
-        <h2>Evenementen</h2>
+        <h2>Events</h2>
         <?php foreach ($calendarList->getItems() as $calendar): ?>
             <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
                 <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
                     <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
-                    <button type="submit">Bekijk details</button>
+                    <button type="submit">View details</button>
                 </form>
             </div>
         <?php endforeach; ?>
@@ -105,70 +105,79 @@ function expo_render_events() {
 
 
 function expo_render_event_detail() {
-    if (!isset($_GET['event_id'])) {
-        return "<p>⚠️ Geen evenement geselecteerd.</p>";
+    if (! isset($_GET['event_id'])) {
+        return "<p>⚠️ No event selected.</p>";
     }
 
     $calendarId = urldecode(sanitize_text_field($_GET['event_id']));
-    $sessions    = fetch_all_events_from_calendar($calendarId);
-    $user_id     = get_current_user_id();
+    $sessions   = fetch_all_events_from_calendar($calendarId);
+    $user_id    = get_current_user_id();
     global $wpdb;
 
-    // ➊ Est-ce que l'utilisateur est déjà inscrit à l'événement ?
+    // ➊ Is user already registered to the event?
     $is_event_reg = (bool) $wpdb->get_var(
         $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
+            "SELECT COUNT(*) 
+             FROM {$wpdb->prefix}user_event 
+             WHERE user_id=%d AND event_uuid=%s",
             $user_id, $calendarId
         )
     );
 
-    // ➋ Quelles sessions sont déjà cochées dans la DB ?
+    // ➋ Which sessions has the user already chosen?
     $registered_sessions = $wpdb->get_col(
         $wpdb->prepare(
-            "SELECT session_id FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s",
+            "SELECT session_id 
+             FROM {$wpdb->prefix}user_session 
+             WHERE user_id=%d AND event_uuid=%s",
             $user_id, $calendarId
         )
     );
 
     ob_start(); ?>
     <div class="event-detail">
-      <h2>Evenement: <?= esc_html( get_google_calendar_service()->calendarList->get($calendarId)->getSummary() ) ?></h2>
+      <h2>Event: <?= esc_html( get_google_calendar_service()
+                                  ->calendarList
+                                  ->get($calendarId)
+                                  ->getSummary() ) ?></h2>
 
-      <?php // ➌ Si pas encore inscrit à l'événement, on affiche le bouton “S’inscrire” ?>
-      <?php if ( ! $is_event_reg ): ?>
-        <form method="POST" action="<?= admin_url('admin-post.php') ?>">
-          <input type="hidden" name="action"   value="submit_session_choices">
-          <input type="hidden" name="event_id" value="<?= esc_attr($calendarId) ?>">
-          <button type="submit">S’inscrire à l’événement</button>
-        </form>
+      <?php if ($is_event_reg): ?>
+        <p><em>You are already registered for this event.</em></p>
       <?php endif; ?>
 
-      <h3>📅 Sessies</h3>
+      <h3>Sessions</h3>
       <form method="POST" action="<?= admin_url('admin-post.php') ?>">
         <input type="hidden" name="action"   value="submit_session_choices">
         <input type="hidden" name="event_id" value="<?= esc_attr($calendarId) ?>">
 
-        <?php foreach ($sessions as $session): 
+        <?php foreach ($sessions as $session):
           $sid      = $session->getId();
-          $disabled = in_array($sid, $registered_sessions) ? 'disabled title="Déjà inscrit"' : '';
+          $disabled = in_array($sid, $registered_sessions)
+                      ? 'disabled title="Already registered"'
+                      : '';
         ?>
           <label>
             <input type="checkbox"
                    name="sessions[]"
                    value="<?= esc_attr($sid) ?>"
                    <?= $disabled ?>>
-            <strong><?= esc_html($session->getSummary()) ?></strong> —  
-            <?= (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))
-                ->format('d/m/Y H:i') ?>
+            <strong><?= esc_html($session->getSummary()) ?></strong>
+            — <?= (new DateTime(
+                   $session->getStart()->getDateTime() 
+                   ?? $session->getStart()->getDate()
+                ))->format('Y-m-d H:i') ?>
           </label><br><br>
         <?php endforeach; ?>
 
-        <button type="submit">Valider mes choix</button>
+        <button type="submit">
+          <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
+        </button>
       </form>
     </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 
@@ -178,11 +187,11 @@ add_action('admin_post_nopriv_submit_session_choices', 'expo_register_event_only
 function expo_register_event_only() {
     global $wpdb;
     if (!is_user_logged_in()) {
-        wp_die('Je moet ingelogd zijn om je te registreren.');
+        wp_die('You must be logged in to register.');
     }
 
     if (!isset($_POST['event_id'])) {
-        wp_die('Ongeldige aanvraag.');
+        wp_die('Invalid request.');
     }
 
     $event_uuid = sanitize_text_field($_POST['event_id']);
@@ -268,7 +277,7 @@ function expo_register_event_only() {
         
 
     } catch (Exception $e) {
-        error_log("❌ Fout bij verwerking van event registratie: " . $e->getMessage());
+        error_log("❌ Error processing event registration: " . $e->getMessage());
     }
 
     $session_table = $wpdb->prefix . 'user_session';
@@ -325,7 +334,7 @@ function expo_register_event_only() {
         $channel->basic_publish($msg, 'session', 'crm.session.update');
 
     } catch (Exception $ex) {
-        error_log("❌ Fout bij sessie-verwerking ($session_id): " . $ex->getMessage());
+        error_log("❌ Error processing session ($session_id): " . $ex->getMessage());
     }
 }
 
