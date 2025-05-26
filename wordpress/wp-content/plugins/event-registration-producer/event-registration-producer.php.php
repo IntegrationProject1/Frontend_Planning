@@ -55,6 +55,9 @@ function fetch_all_calendars_and_sessions() {
     $allEvents = [];
 
     foreach ($calendarList->getItems() as $calendar) {
+        if ( $calendar->getId() === 'planning@youmnimalha.be' ) {
+        continue;
+    }
         $calendarId = $calendar->getId();
         $eventItems = fetch_all_events_from_calendar($calendarId);
 
@@ -85,7 +88,11 @@ function expo_render_events() {
     <?php endif; ?>
 
     <div id="expo-events">
-        <?php foreach ($calendarList->getItems() as $calendar): ?>
+        <?php foreach ($calendarList->getItems() as $calendar): 
+            if ( $calendar->getId() === 'planning@youmnimalha.be' ) {
+          continue;
+        }
+        ?>
             <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
@@ -108,13 +115,35 @@ function expo_render_event_detail() {
         return '<p>⚠️ No event selected.</p>';
     }
 
-    $calendarId = urldecode( sanitize_text_field( $_GET['event_id'] ) );
+    // Sanitize & initialize
+    $calendarId = sanitize_text_field( $_GET['event_id'] );
+    $service    = get_google_calendar_service();
 
-    $service = get_google_calendar_service();
-    $event   = $service->events->get( 'planning@youmnimalha.be', $calendarId );
+    // 1) Fetch the "calendar" (your event)
+    try {
+        $calendar = $service->calendarList->get( $calendarId );
+    } catch (Exception $e) {
+        return '<p>❌ Unable to load event details.</p>';
+    }
+    $title = $calendar->getSummary();
 
+    // 2) Fetch all sessions
     $sessions = fetch_all_events_from_calendar( $calendarId );
 
+    // 3) Use the first session for date/location fallback
+    $first = reset( $sessions );
+    if ( $first ) {
+        $start = ( new DateTime(
+            $first->getStart()->getDateTime() 
+            ?? $first->getStart()->getDate()
+        ) )->format( 'Y-m-d H:i' );
+        $loc   = $first->getLocation() ?: 'TBD';
+    } else {
+        $start = 'TBD';
+        $loc   = 'TBD';
+    }
+
+    // 4) Check registration status
     $user_id = get_current_user_id();
     global $wpdb;
     $is_event_reg = (bool) $wpdb->get_var( $wpdb->prepare(
@@ -126,24 +155,16 @@ function expo_render_event_detail() {
         $user_id, $calendarId
     ) );
 
+    // 5) Render HTML
     ob_start();
     ?>
     <div class="event-detail">
-
-      <h2 class="event-title">
-        <?= esc_html( $event->getSummary() ) ?>
-      </h2>
+      <h2 class="event-title"><?= esc_html( $title ) ?></h2>
 
       <div class="event-detail__grid">
-
         <div class="event-info">
-          <p><strong>Date:</strong>
-            <?= (new DateTime( $event->getStart()->getDateTime() ))
-                ->format('Y-m-d H:i') ?>
-          </p>
-          <p><strong>Location:</strong>
-            <?= esc_html( $event->getLocation() ?: 'TBD' ) ?>
-          </p>
+          <p><strong>Date:</strong> <?= esc_html( $start ) ?></p>
+          <p><strong>Location:</strong> <?= esc_html( $loc ) ?></p>
         </div>
 
         <div class="sessions-list">
@@ -151,14 +172,14 @@ function expo_render_event_detail() {
             <p><em>You are already registered for this event.</em></p>
           <?php endif; ?>
 
-          <form method="POST" action="<?= admin_url('admin-post.php') ?>">
+          <form method="POST" action="<?= esc_url( admin_url('admin-post.php') ) ?>">
             <input type="hidden" name="action"   value="submit_session_choices">
             <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
 
-            <?php foreach ( $sessions as $session ): 
+            <?php foreach ( $sessions as $session ):
               $sid      = $session->getId();
-              $disabled = in_array( $sid, $registered_sessions )
-                          ? 'disabled title="Already registered"'
+              $disabled = in_array( $sid, $registered_sessions ) 
+                          ? 'disabled title="Already registered"' 
                           : '';
             ?>
               <label>
@@ -167,8 +188,10 @@ function expo_render_event_detail() {
                        value="<?= esc_attr( $sid ) ?>"
                        <?= $disabled ?>>
                 <strong><?= esc_html( $session->getSummary() ) ?></strong>
-                — <?= (new DateTime( $session->getStart()->getDateTime() ))
-                    ->format('Y-m-d H:i') ?>
+                — <?= esc_html( (new DateTime(
+                        $session->getStart()->getDateTime() 
+                        ?? $session->getStart()->getDate()
+                      ))->format('Y-m-d H:i') ) ?>
               </label><br><br>
             <?php endforeach; ?>
 
@@ -177,12 +200,12 @@ function expo_render_event_detail() {
             </button>
           </form>
         </div>
-
       </div>
     </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 
@@ -355,44 +378,49 @@ function ajax_get_calendar_events() {
         $eventsByCalendar = fetch_all_calendars_and_sessions();
         $formatted = [];
 
-        foreach ($eventsByCalendar as $calendarData) {
-            $calendarId = $calendarData['calendarId'];
-            $calendarName = $calendarData['calendarName'];
+        foreach ( $eventsByCalendar as $calendarData ) {
+            // On skip l'agenda “planning@youmnimalha.be”
+            if ( $calendarData['calendarId'] === 'planning@youmnimalha.be' ) {
+                continue;
+            }
+
             $sessions = [];
-
-            foreach ($calendarData['sessions'] as $session) {
-                if (!($session instanceof Google_Service_Calendar_Event)) continue;
-
-                $descRaw = $session->getDescription();
+            foreach ( $calendarData['sessions'] as $session ) {
+                if ( ! ($session instanceof Google_Service_Calendar_Event) ) {
+                    continue;
+                }
+                // Gestion description JSON vs. texte
+                $descRaw   = $session->getDescription();
                 $descFinal = $descRaw;
-                $json = json_decode($descRaw, true);
-                if (json_last_error() === JSON_ERROR_NONE && isset($json['description'])) {
+                $json      = json_decode( $descRaw, true );
+                if ( json_last_error() === JSON_ERROR_NONE && isset( $json['description'] ) ) {
                     $descFinal = $json['description'];
                 }
 
                 $sessions[] = [
-                    'id' => $session->getId(),
-                    'summary' => $session->getSummary(),
+                    'id'          => $session->getId(),
+                    'summary'     => $session->getSummary(),
                     'description' => $descFinal,
-                    'start' => $session->getStart()->getDateTime() ?? $session->getStart()->getDate(),
-                    'end' => $session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()
+                    'start'       => $session->getStart()->getDateTime() ?? $session->getStart()->getDate(),
+                    'end'         => $session->getEnd()->getDateTime()   ?? $session->getEnd()->getDate(),
                 ];
             }
 
             $formatted[] = [
-                'calendarId' => $calendarId,
-                'calendarName' => $calendarName,
-                'sessions' => $sessions
+                'calendarId'   => $calendarData['calendarId'],
+                'calendarName' => $calendarData['calendarName'],
+                'sessions'     => $sessions,
             ];
         }
 
-        wp_send_json($formatted);
-    } catch (Exception $e) {
+        wp_send_json( $formatted );
+    } catch ( Exception $e ) {
         wp_send_json_error([
-            'message' => "Erreur lors de la récupération des events + sessies : " . $e->getMessage()
+            'message' => "Erreur lors de la récupération des events + sessions : " . $e->getMessage()
         ], 500);
     }
 }
+
 
 
 
