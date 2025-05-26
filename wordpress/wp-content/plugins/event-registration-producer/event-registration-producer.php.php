@@ -70,56 +70,24 @@ function fetch_all_calendars_and_sessions() {
 
 
 function expo_render_events() {
+    $service = get_google_calendar_service();
+    $calendarList = $service->calendarList->listCalendarList();
+    
     ob_start();
     ?>
     <div id="expo-events">
-        <p>Evenementen worden geladen...</p>
+        <h2>Evenementen</h2>
+        <?php foreach ($calendarList->getItems() as $calendar): ?>
+            <div class="event-box">
+                <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
+                <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getId()); ?></p>
+                <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
+                    <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
+                    <button type="submit">Bekijk details</button>
+                </form>
+            </div>
+        <?php endforeach; ?>
     </div>
-
-    <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        fetch("<?php echo admin_url('admin-ajax.php'); ?>?action=get_calendar_events")
-            .then(res => res.json()
-                .catch(e => {
-                    console.error("❌ JSON-parserfout:", e);
-                    return { success: false, data: { message: "Ongeldige JSON ontvangen." } };
-                })
-            )
-            .then(data => {
-                if (!data || data.success === false) {
-                    console.error("❌ AJAX-fout:", data?.data?.message || "Lege of ongeldige reactie");
-                    document.getElementById("expo-events").innerHTML = "<p>❌ Fout: " + (data?.data?.message || "Onbekend") + "</p>";
-                    return;
-                }
-
-                const events = data;
-                const container = document.getElementById("expo-events");
-                container.innerHTML = "";
-                events.forEach(calendar => {
-                    calendar.sessions.forEach(session => {
-                        const div = document.createElement("div");
-                        div.className = "event-box";
-                        div.innerHTML = `
-                            <h3>${session.summary}</h3>
-                            <p>${session.description || "Geen beschrijving."}</p>
-                            <p><strong>Start:</strong> ${session.start}</p>
-                            <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
-                                <input type="hidden" name="event_id" value="${calendar.calendarId}">
-                                <input type="hidden" name="session_id" value="${session.id}">
-                                <button type="submit">Inschrijven</button>
-                            </form>
-                        `;
-                        container.appendChild(div);
-                    });
-                });
-            })
-            .catch(err => {
-                console.error("❌ AJAX-verzoek fout:", err);
-                document.getElementById("expo-events").innerHTML = "<p>❌ Technische fout bij ophalen van evenementen.</p>";
-            });
-
-    });
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -155,7 +123,7 @@ function expo_render_event_detail() {
     ?>
     <div class="event-detail">
     <h2>Evenement: <?php echo esc_html($calendarId); ?></h2>
-    <p><strong>Organisator:</strong> <?php echo esc_html($calendarId); ?></p>
+    <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getSummary()); ?></p>
 
 
     <h3>Kies de sessies:</h3>
