@@ -178,6 +178,14 @@ function expo_register_event_only() {
         ]);
     }
 
+    $host = getenv('RABBITMQ_HOST');
+        $port = getenv('RABBITMQ_PORT');
+        $user = getenv('RABBITMQ_USER');
+        $pass = getenv('RABBITMQ_PASSWORD');
+
+        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
+        $channel = $connection->channel();
+        
     try {
         $service = get_google_calendar_service();
         $event = $service->events->get('planning@youmnimalha.be', $event_uuid);
@@ -220,13 +228,6 @@ function expo_register_event_only() {
             $reg->addChild('User')->addChild('UUID', $uuid);
         }
 
-        $host = getenv('RABBITMQ_HOST');
-        $port = getenv('RABBITMQ_PORT');
-        $user = getenv('RABBITMQ_USER');
-        $pass = getenv('RABBITMQ_PASSWORD');
-
-        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
-        $channel = $connection->channel();
         $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
         $channel->basic_publish($msg, 'event', 'planning.event.update');
         $channel->basic_publish($msg, 'event', 'kassa.event.update');
