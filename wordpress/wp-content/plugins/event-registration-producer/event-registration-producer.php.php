@@ -81,7 +81,6 @@ function expo_render_events() {
             <?php if ($calendar->getAccessRole() !== 'owner') continue; ?>
             <div class="event-box">
                 <h3><?php echo esc_html($calendar->getSummary()); ?></h3>
-                <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getSummary()); ?></p>
                 <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
                     <input type="hidden" name="event_id" value="<?php echo esc_attr($calendar->getId()); ?>">
                     <button type="submit">Bekijk details</button>
@@ -101,7 +100,7 @@ function expo_render_event_detail() {
         return "<p>⚠️ Geen evenement geselecteerd.</p>";
     }
 
-    $calendarId = sanitize_text_field($_GET['event_id']);
+$calendarId = urldecode(sanitize_text_field($_GET['event_id']));
 
     try {
         $sessions = fetch_all_events_from_calendar($calendarId);
