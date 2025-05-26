@@ -82,11 +82,10 @@ function expo_render_events() {
                         <h3>${event.summary}</h3>
                         <p>${event.description || "Geen beschrijving."}</p>
                         <p><strong>Start:</strong> ${event.start}</p>
-                        <form method="GET" action="/evenement-detail">
+                        <form method="GET" action="${"<?php echo site_url('/evenement-detail'); ?>"}">
                             <input type="hidden" name="event_id" value="${event.id}">
                             <button type="submit">Inschrijven</button>
                         </form>
-
                     `;
                     container.appendChild(div);
                 });
