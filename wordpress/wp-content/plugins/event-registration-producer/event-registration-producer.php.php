@@ -115,11 +115,9 @@ function expo_render_event_detail() {
         return '<p>⚠️ No event selected.</p>';
     }
 
-    // Sanitize & initialize
     $calendarId = sanitize_text_field( $_GET['event_id'] );
     $service    = get_google_calendar_service();
 
-    // 1) Fetch the "calendar" (your event)
     try {
         $calendar = $service->calendarList->get( $calendarId );
     } catch (Exception $e) {
@@ -127,23 +125,16 @@ function expo_render_event_detail() {
     }
     $title = $calendar->getSummary();
 
-    // 2) Fetch all sessions
     $sessions = fetch_all_events_from_calendar( $calendarId );
-
-    // 3) Use the first session for date/location fallback
-    $first = reset( $sessions );
+    $first    = reset( $sessions );
     if ( $first ) {
-        $start = ( new DateTime(
-            $first->getStart()->getDateTime() 
-            ?? $first->getStart()->getDate()
-        ) )->format( 'Y-m-d H:i' );
+        $start = ( new DateTime( $first->getStart()->getDateTime() ?? $first->getStart()->getDate() ) )
+                 ->format( 'Y-m-d H:i' );
         $loc   = $first->getLocation() ?: 'TBD';
     } else {
-        $start = 'TBD';
-        $loc   = 'TBD';
+        $start = $loc = 'TBD';
     }
 
-    // 4) Check registration status
     $user_id = get_current_user_id();
     global $wpdb;
     $is_event_reg = (bool) $wpdb->get_var( $wpdb->prepare(
@@ -155,19 +146,13 @@ function expo_render_event_detail() {
         $user_id, $calendarId
     ) );
 
-    // 5) Render HTML
-    ob_start();
-    ?>
+    ob_start(); ?>
     <div class="event-detail">
       <h2 class="event-title"><?= esc_html( $title ) ?></h2>
 
       <div class="event-detail__grid">
-        <div class="event-info">
-          <p><strong>Date:</strong> <?= esc_html( $start ) ?></p>
-          <p><strong>Location:</strong> <?= esc_html( $loc ) ?></p>
-        </div>
-
         <div class="sessions-list">
+          <h3>Sessions</h3>
           <?php if ( $is_event_reg ): ?>
             <p><em>You are already registered for this event.</em></p>
           <?php endif; ?>
@@ -176,10 +161,10 @@ function expo_render_event_detail() {
             <input type="hidden" name="action"   value="submit_session_choices">
             <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
 
-            <?php foreach ( $sessions as $session ):
+            <?php foreach ( $sessions as $session ) :
               $sid      = $session->getId();
-              $disabled = in_array( $sid, $registered_sessions ) 
-                          ? 'disabled title="Already registered"' 
+              $disabled = in_array( $sid, $registered_sessions )
+                          ? 'disabled title="Already registered"'
                           : '';
             ?>
               <label>
@@ -189,22 +174,34 @@ function expo_render_event_detail() {
                        <?= $disabled ?>>
                 <strong><?= esc_html( $session->getSummary() ) ?></strong>
                 — <?= esc_html( (new DateTime(
-                        $session->getStart()->getDateTime() 
+                        $session->getStart()->getDateTime()
                         ?? $session->getStart()->getDate()
                       ))->format('Y-m-d H:i') ) ?>
               </label><br><br>
             <?php endforeach; ?>
-
-            <button type="submit">
-              <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
-            </button>
           </form>
         </div>
+
+        <div class="event-info">
+          <p><strong>Date:</strong> <?= esc_html( $start ) ?></p>
+          <p><strong>Location:</strong> <?= esc_html( $loc ) ?></p>
+        </div>
+      </div>
+
+      <div class="event-actions">
+        <form method="POST" action="<?= esc_url( admin_url('admin-post.php') ) ?>">
+          <input type="hidden" name="action"   value="submit_session_choices">
+          <input type="hidden" name="event_id" value="<?= esc_attr( $calendarId ) ?>">
+          <button type="submit">
+            <?= $is_event_reg ? 'Update my sessions' : 'Register for event' ?>
+          </button>
+        </form>
       </div>
     </div>
     <?php
     return ob_get_clean();
 }
+
 
 
 
@@ -477,44 +474,67 @@ add_action( 'wp_enqueue_scripts', function(){
 
                 
         .event-detail {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 2rem 1rem;
-        }
-        .event-title {
-        text-align: center;
-        margin-bottom: 2rem;
-        }
-        .event-detail__grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        grid-gap: 2rem;
-        align-items: start;
-        }
-        /* Bloc “infos” à droite */
-        .event-info {
-        background: #f5f5f5;
-        padding: 1rem;
-        border-radius: .5rem;
-        box-shadow: 0 1px 6px rgba(0,0,0,0.1);
-        }
-        .event-info p {
-        margin: .5rem 0;
-        }
-        /* Sessions à gauche, sans marge excessive */
-        .sessions-list form {
-        margin-top: 0;  /* remonte le formulaire */
-        }
-        /* Responsive : une colonne sur mobile */
-        @media (max-width: 768px) {
-        .event-detail__grid {
-            grid-template-columns: 1fr;
-        }
-        .event-info {
-            order: -1; /* affiche les infos avant la liste sur mobile */
-            margin-bottom: 2rem;
-        }
-        }
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 1rem;
+            }
+            .event-title {
+            text-align: center;
+            margin: 1rem 0 2rem; /* Titre un peu plus haut */
+            }
+            .event-detail__grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            grid-gap: 2rem;
+            align-items: start;
+            }
+            /* Sessions à gauche */
+            .sessions-list h3 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            }
+            .sessions-list {
+            /* remonte la liste pour être plus près du titre */
+            margin-top: 0;
+            }
+            /* Infos à droite */
+            .event-info {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: .5rem;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+            }
+            .event-info p {
+            margin: .5rem 0;
+            }
+            /* Bouton centré en bas */
+            .event-actions {
+            text-align: center;
+            margin-top: 2rem;
+            }
+            .event-actions button {
+            padding: .75rem 1.5rem;
+            border: none;
+            background: #0073aa;
+            color: #fff;
+            font-weight: bold;
+            border-radius: .25rem;
+            cursor: pointer;
+            }
+            .event-actions button:hover {
+            background: #005177;
+            }
+            /* Responsive : une colonne sur mobile */
+            @media (max-width: 768px) {
+            .event-detail__grid {
+                grid-template-columns: 1fr;
+            }
+            .sessions-list {
+                order: -1; /* sessions d’abord */
+                margin-bottom: 1.5rem;
+            }
+            }
+
 
     " );
 }, 20 );
