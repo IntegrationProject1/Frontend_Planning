@@ -230,162 +230,164 @@ add_action('admin_post_nopriv_submit_session_choices', 'expo_register_event_only
 
 function expo_register_event_only() {
     global $wpdb;
-    if (!is_user_logged_in()) {
-        wp_die('You must be logged in to register.');
+
+    // Vérification login
+    if ( ! is_user_logged_in() ) {
+        wp_die( 'You must be logged in to register.' );
     }
 
-    if (!isset($_POST['event_id'])) {
-        wp_die('Invalid request.');
+    // Vérification event_id
+    if ( ! isset( $_POST['event_id'] ) ) {
+        wp_die( 'Invalid request.' );
     }
 
-    $event_uuid = sanitize_text_field($_POST['event_id']);
-    $user_id = get_current_user_id();
-    $sessions = isset($_POST['sessions']) ? array_map('sanitize_text_field', $_POST['sessions']) : [];
+    $event_uuid = sanitize_text_field( $_POST['event_id'] );
+    $user_id    = get_current_user_id();
+    $sessions   = isset( $_POST['sessions'] ) 
+                  ? array_map( 'sanitize_text_field', $_POST['sessions'] ) 
+                  : [];
 
-    $already_event = (bool) $wpdb->get_var(
-        $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
-            $user_id, $event_uuid
-        )
-    );
-    if ($already_event && empty($sessions)) {
-
-        wp_redirect(site_url("/events/?already_registered=1"));
-        exit;
-    }
-
-    if (! $already_event) {
+    // ➊ Insertion user_event si nécessaire
+    $already_event = (bool) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}user_event WHERE user_id=%d AND event_uuid=%s",
+        $user_id, $event_uuid
+    ) );
+    if ( ! $already_event ) {
         $wpdb->insert(
             "{$wpdb->prefix}user_event",
             [ 'user_id' => $user_id, 'event_uuid' => $event_uuid ]
         );
+    } elseif ( empty( $sessions ) ) {
+        // Cas où on essaie de se désinscrire sans session : redirige avec message
+        wp_redirect( site_url( "/events/?already_registered=1" ) );
+        exit;
     }
 
-
-    $host = getenv('RABBITMQ_HOST');
-        $port = getenv('RABBITMQ_PORT');
-        $user = getenv('RABBITMQ_USER');
-        $pass = getenv('RABBITMQ_PASSWORD');
-
-        $connection = new AMQPStreamConnection($host, $port, $user, $pass);
-        $channel = $connection->channel();
-
-    try {
-        $service = get_google_calendar_service();
-        $event = $service->events->get('planning@youmnimalha.be', $event_uuid);
-        $attendees = $event->getAttendees();
-
-        $user_uuid = get_user_meta($user_id, 'UUID', true);
-        if (!$user_uuid) {
-            $user_uuid = (new DateTime())->format('Y-m-d\TH:i:s.u\Z');
-            update_user_meta($user_id, 'UUID', $user_uuid);
-        }
-
-        $attendee_uuids = [$user_uuid];
-        if ($attendees) {
-            foreach ($attendees as $attendee) {
-                if ($attendee->getEmail()) {
-                    $wp_user = get_user_by('email', $attendee->getEmail());
-                    if ($wp_user) {
-                        $uuid = get_user_meta($wp_user->ID, 'UUID', true);
-                        if ($uuid && $uuid !== $user_uuid) {
-                            $attendee_uuids[] = $uuid;
-                        }
-                    }
-                }
-            }
-        }
-
-        $xml = new SimpleXMLElement('<UpdateEvent/>');
-        $xml->addChild('EventUUID', $event_uuid);
-        $xml->addChild('EventName', $event->getSummary());
-        $xml->addChild('EventDescription', $event->getDescription());
-        $xml->addChild('StartDateTime', (new DateTime($event->getStart()->getDateTime() ?? $event->getStart()->getDate()))->format(DateTime::ATOM));
-        $xml->addChild('EndDateTime', (new DateTime($event->getEnd()->getDateTime() ?? $event->getEnd()->getDate()))->format(DateTime::ATOM));
-        $xml->addChild('EventLocation', $event->getLocation() ?: 'Onbekende locatie');
-        $xml->addChild('Organisator', $event->getCreator()->getEmail() ?: 'onbekend');
-        $xml->addChild('Capacity', 100);
-        $xml->addChild('EventType', 'default');
-
-        $reg = $xml->addChild('RegisteredUsers');
-        foreach ($attendee_uuids as $uuid) {
-            $reg->addChild('User')->addChild('UUID', $uuid);
-        }
-
-        $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
-        $channel->basic_publish($msg, 'event', 'planning.event.update');
-        $channel->basic_publish($msg, 'event', 'kassa.event.update');
-        $channel->basic_publish($msg, 'event', 'crm.event.update');
-        
-
-    } catch (Exception $e) {
-        error_log("❌ Error processing event registration: " . $e->getMessage());
-    }
-
-    $session_table = $wpdb->prefix . 'user_session';
-
-
-    foreach ( $sessions as $session_id ) {
-        $already_session = (bool) $wpdb->get_var( $wpdb->prepare(
+    // ➋ Insertion user_session
+    foreach ( $sessions as $sid ) {
+        $exists = (bool) $wpdb->get_var( $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->prefix}user_session WHERE user_id=%d AND event_uuid=%s AND session_id=%s",
-            $user_id, $event_uuid, $session_id
+            $user_id, $event_uuid, $sid
         ) );
-        if ( ! $already_session ) {
+        if ( ! $exists ) {
             $wpdb->insert(
                 "{$wpdb->prefix}user_session",
                 [
-                'user_id'    => $user_id,
-                'event_uuid' => $event_uuid,
-                'session_id' => $session_id
+                    'user_id'    => $user_id,
+                    'event_uuid' => $event_uuid,
+                    'session_id' => $sid,
                 ]
             );
         }
     }
 
+    // Connexion RabbitMQ (exchanges déjà déclarés ailleurs)
+    $host       = getenv( 'RABBITMQ_HOST' );
+    $port       = getenv( 'RABBITMQ_PORT' );
+    $user       = getenv( 'RABBITMQ_USER' );
+    $pass       = getenv( 'RABBITMQ_PASSWORD' );
+    $connection = new AMQPStreamConnection( $host, $port, $user, $pass );
+    $channel    = $connection->channel();
 
-
-    foreach ($sessions as $session_id) {
+    // ➌ Publication événement
     try {
-        $session = $service->events->get($event_uuid, $session_id);
+        $service   = get_google_calendar_service();
+        $event     = $service->events->get( 'planning@youmnimalha.be', $event_uuid );
+        $user_uuid = get_user_meta( $user_id, 'UUID', true ) ?: ( new DateTime() )->format('Y-m-d\TH:i:s.u\Z');
+        if ( ! get_user_meta( $user_id, 'UUID', true ) ) {
+            update_user_meta( $user_id, 'UUID', $user_uuid );
+        }
 
-        $xml = new SimpleXMLElement('<UpdateSession/>');
-        $xml->addChild('SessionUUID', (new DateTime())->format(DateTime::ATOM));
-        $xml->addChild('EventUUID', $event_uuid);
-        $xml->addChild('SessionName', $session->getSummary());
-        $xml->addChild('SessionDescription', $session->getDescription() ?? '');
-
-        // Optional: guest speakers
-        $guest = $xml->addChild('GuestSpeakers');
-        $guest_speaker = $guest->addChild('GuestSpeaker');
-        $guest_speaker->addChild('email', $session->getCreator()->getEmail() ?? '');
-
-        $xml->addChild('Capacity', 100);
-        $xml->addChild('StartDateTime', (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format(DateTime::ATOM));
-        $xml->addChild('EndDateTime', (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format(DateTime::ATOM));
-        $xml->addChild('SessionLocation', $session->getLocation() ?? 'Onbekende locatie');
-        $xml->addChild('SessionType', 'default');
+        // Construction XML
+        $xml = new SimpleXMLElement('<UpdateEvent/>');
+        $xml->addChild('EventUUID',       $event_uuid );
+        $xml->addChild('EventName',       $event->getSummary() );
+        $xml->addChild('EventDescription',$event->getDescription() );
+        $xml->addChild('StartDateTime',   ( new DateTime( $event->getStart()->getDateTime() ?? $event->getStart()->getDate() ) )->format(DateTime::ATOM) );
+        $xml->addChild('EndDateTime',     ( new DateTime( $event->getEnd()->getDateTime()   ?? $event->getEnd()->getDate()   ) )->format(DateTime::ATOM) );
+        $xml->addChild('EventLocation',   $event->getLocation() ?: 'Onbekende locatie' );
+        $xml->addChild('Organisator',     $event->getCreator()->getEmail() ?: 'onbekend' );
+        $xml->addChild('Capacity',        100 );
+        $xml->addChild('EventType',       'default' );
 
         $reg = $xml->addChild('RegisteredUsers');
-        $user = $reg->addChild('User');
-        $user->addChild('email', wp_get_current_user()->user_email);
+        $reg->addChild('User')->addChild('UUID', $user_uuid);
 
-        $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
+        $msg = new AMQPMessage( $xml->asXML(), ['content_type' => 'text/xml'] );
 
-        // Publish to both routing keys
-        $channel->basic_publish($msg, 'session', 'planning.session.update');
-        $channel->basic_publish($msg, 'session', 'crm.session.update');
+        error_log("🐇 [RabbitMQ] publish to event planning.event.update");
+        try {
+            $channel->basic_publish( $msg, 'event', 'planning.event.update' );
+        } catch (Exception $ex) {
+            error_log("❌ RabbitMQ error (planning.event.update): " . $ex->getMessage());
+        }
 
-    } catch (Exception $ex) {
-        error_log("❌ Error processing session ($session_id): " . $ex->getMessage());
+        error_log("🐇 [RabbitMQ] publish to event kassa.event.update");
+        try {
+            $channel->basic_publish( $msg, 'event', 'kassa.event.update' );
+        } catch (Exception $ex) {
+            error_log("❌ RabbitMQ error (kassa.event.update): " . $ex->getMessage());
+        }
+
+        error_log("🐇 [RabbitMQ] publish to event crm.event.update");
+        try {
+            $channel->basic_publish( $msg, 'event', 'crm.event.update' );
+        } catch (Exception $ex) {
+            error_log("❌ RabbitMQ error (crm.event.update): " . $ex->getMessage());
+        }
+
+    } catch (Exception $e) {
+        error_log("❌ Error processing event: " . $e->getMessage());
     }
-}
 
-        $channel->close();
-        $connection->close();
+    // ➍ Publication sessions
+    foreach ( $sessions as $sid ) {
+        try {
+            $session = $service->events->get( $event_uuid, $sid );
+            $xmlS    = new SimpleXMLElement('<UpdateSession/>');
+            $xmlS->addChild('SessionUUID',     ( new DateTime() )->format(DateTime::ATOM) );
+            $xmlS->addChild('EventUUID',       $event_uuid );
+            $xmlS->addChild('SessionName',     $session->getSummary() );
+            $xmlS->addChild('SessionDescription', $session->getDescription() ?? '' );
+            $xmlS->addChild('Capacity',        100 );
+            $xmlS->addChild('StartDateTime',   ( new DateTime( $session->getStart()->getDateTime() ?? $session->getStart()->getDate() ) )->format(DateTime::ATOM) );
+            $xmlS->addChild('EndDateTime',     ( new DateTime( $session->getEnd()->getDateTime()   ?? $session->getEnd()->getDate()   ) )->format(DateTime::ATOM) );
+            $xmlS->addChild('SessionLocation', $session->getLocation() ?? 'Onbekende locatie' );
+            $xmlS->addChild('SessionType',     'default' );
 
-    wp_redirect(site_url("/events/?registration=success"));
+            $regS = $xmlS->addChild('RegisteredUsers');
+            $regS->addChild('User')->addChild('email', wp_get_current_user()->user_email);
+
+            $msgS = new AMQPMessage( $xmlS->asXML(), ['content_type' => 'text/xml'] );
+
+            error_log("🐇 [RabbitMQ] publish to session planning.session.update");
+            try {
+                $channel->basic_publish( $msgS, 'session', 'planning.session.update' );
+            } catch (Exception $ex) {
+                error_log("❌ RabbitMQ error (planning.session.update): " . $ex->getMessage());
+            }
+
+            error_log("🐇 [RabbitMQ] publish to session crm.session.update");
+            try {
+                $channel->basic_publish( $msgS, 'session', 'crm.session.update' );
+            } catch (Exception $ex) {
+                error_log("❌ RabbitMQ error (crm.session.update): " . $ex->getMessage());
+            }
+
+        } catch (Exception $ex) {
+            error_log("❌ Error processing session $sid: " . $ex->getMessage());
+        }
+    }
+
+    // Fermeture connexion
+    $channel->close();
+    $connection->close();
+
+    // Redirection finale
+    wp_redirect( site_url( "/events/?registration=success" ) );
     exit;
 }
+
 
 function ajax_get_calendar_events() {
     try {
