@@ -116,6 +116,18 @@ function expo_render_event_detail() {
         return "<p>❌ Kan evenement niet ophalen: " . esc_html($e->getMessage()) . "</p>";
     }
 
+    $user_id = get_current_user_id();
+    $already_registered = false;
+
+    if ($user_id) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'user_event';
+        $already_registered = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
+            $user_id, $eventId
+        )) > 0;
+}
+
     ob_start();
     ?>
     <div class="event-detail">
@@ -125,16 +137,20 @@ function expo_render_event_detail() {
         <p><?php echo nl2br(esc_html($event->getDescription())); ?></p>
 
         <h3>Kies de sessies:</h3>
-        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
+        <?php if ($already_registered): ?>
+            <p><strong>✅ Je bent al ingeschreven voor dit evenement.</strong></p>
+        <?php else: ?>
+            <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+                <input type="hidden" name="action" value="submit_session_choices">
+                <input type="hidden" name="event_id" value="<?php echo esc_attr($eventId); ?>">
 
-            <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
-            <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session1"> Sessie 1 - Introductie</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session2"> Sessie 2 - Praktijk</label><br>
+                <label><input type="checkbox" name="sessions[]" value="session3"> Sessie 3 - Vragen & Antwoorden</label><br>
 
-            <button type="submit">Bevestig inschrijving</button>
-        </form>
+                <button type="submit">Bevestig inschrijving</button>
+            </form>
+        <?php endif; ?>
     </div>
 
     <script>
@@ -239,7 +255,7 @@ function expo_register_event_only() {
         error_log("❌ Fout bij verwerking van event registratie: " . $e->getMessage());
     }
 
-    wp_redirect(site_url("/evenement-detail/?event_id=$event_uuid&confirmed=1"));
+    wp_redirect(site_url("/evenementen/?registration=success"));
     exit;
 }
 
