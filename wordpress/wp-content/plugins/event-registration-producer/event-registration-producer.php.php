@@ -207,7 +207,7 @@ function expo_register_event_only() {
     );
     if ($already_event && empty($sessions)) {
         // redirige avec popup “déjà inscrit”
-        wp_redirect(site_url("/evenementen/?already_registered=1"));
+        wp_redirect(site_url("/events/?already_registered=1"));
         exit;
     }
 
@@ -341,7 +341,7 @@ function expo_register_event_only() {
         $channel->close();
         $connection->close();
 
-    wp_redirect(site_url("/evenementen/?registration=success"));
+    wp_redirect(site_url("/events/?registration=success"));
     exit;
 }
 
