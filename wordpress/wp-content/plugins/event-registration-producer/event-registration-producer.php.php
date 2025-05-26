@@ -230,8 +230,8 @@ function expo_register_event_only() {
         $channel = $connection->channel();
         $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
         $channel->basic_publish($msg, 'event', 'planning.event.update');
-        $channel->basic_publish($msg, 'event', 'kassa_event_update');
-        $channel->basic_publish($msg, 'event', 'crm_event_update');
+        $channel->basic_publish($msg, 'event', 'kassa.event.update');
+        $channel->basic_publish($msg, 'event', 'crm.event.update');
         $channel->close();
         $connection->close();
 
