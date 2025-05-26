@@ -116,6 +116,18 @@ function expo_render_event_detail() {
         return "<p>❌ Kan evenement niet ophalen: " . esc_html($e->getMessage()) . "</p>";
     }
 
+    $user_id = get_current_user_id();
+    $already_registered = false;
+
+    if ($user_id) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'user_event';
+        $already_registered = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
+            $user_id, $eventId
+        )) > 0;
+}
+
     ob_start();
     ?>
     <div class="event-detail">
@@ -239,7 +251,7 @@ function expo_register_event_only() {
         error_log("❌ Fout bij verwerking van event registratie: " . $e->getMessage());
     }
 
-    wp_redirect(site_url("/evenement-detail/?event_id=$event_uuid&confirmed=1"));
+    wp_redirect(site_url("/evenementen/?registration=success"));
     exit;
 }
 
