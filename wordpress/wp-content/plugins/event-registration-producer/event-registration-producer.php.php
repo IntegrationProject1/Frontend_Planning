@@ -114,25 +114,33 @@ function expo_render_event_detail() {
     ob_start();
     ?>
     <div class="event-detail">
-        <h2>Evenement: <?php echo esc_html($calendar->getSummary()); ?></h2>
-        <p><strong>Agenda-ID:</strong> <?php echo esc_html($calendarId); ?></p>
+    <h2>Evenement: <?php echo esc_html($calendar->getSummary()); ?></h2>
+    <p><strong>Agenda-ID:</strong> <?php echo esc_html($calendarId); ?></p>
 
-        <h3>📅 Sessies in dit evenement:</h3>
+    <h3>📅 Sessies in dit evenement:</h3>
 
-        <?php if (empty($sessions)): ?>
-            <p>⚠️ Geen sessies gevonden in deze agenda.</p>
-        <?php else: ?>
-            <ul>
-                <?php foreach ($sessions as $session): ?>
-                    <li style="margin-bottom: 1em;">
-                        <strong><?php echo esc_html($session->getSummary()); ?></strong><br>
-                        📅 Start: <?php echo (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format('d/m/Y H:i'); ?><br>
-                        ⏰ Eind: <?php echo (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format('d/m/Y H:i'); ?>
-                    </li>
-                <?php endforeach; ?>
-            </ul>
-        <?php endif; ?>
-    </div>
+    <?php if (empty($sessions)): ?>
+        <p>⚠️ Geen sessies gevonden in deze agenda.</p>
+    <?php else: ?>
+        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
+            <input type="hidden" name="action" value="submit_session_choices">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($calendarId); ?>">
+
+            <?php foreach ($sessions as $session): ?>
+                <label>
+                    <input type="checkbox" name="sessions[]" value="<?php echo esc_attr($session->getId()); ?>">
+                    <strong><?php echo esc_html($session->getSummary()); ?></strong><br>
+                    📅 <?php echo (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format('d/m/Y H:i'); ?> -
+                    <?php echo (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format('H:i'); ?>
+                </label>
+                <br><br>
+            <?php endforeach; ?>
+
+            <button type="submit">Bevestig inschrijving</button>
+        </form>
+    <?php endif; ?>
+</div>
+
     <?php
     return ob_get_clean();
 }
