@@ -100,66 +100,43 @@ function expo_render_event_detail() {
         return "<p>⚠️ Geen evenement geselecteerd.</p>";
     }
 
-$calendarId = urldecode(sanitize_text_field($_GET['event_id']));
+    $calendarId = urldecode(sanitize_text_field($_GET['event_id']));
+    $sessions = [];
 
     try {
+        $service = get_google_calendar_service();
+        $calendar = $service->calendarList->get($calendarId);
         $sessions = fetch_all_events_from_calendar($calendarId);
     } catch (Exception $e) {
-        return "<p>❌ Kan sessies of kalender niet ophalen: " . esc_html($e->getMessage()) . "</p>";
+        return "<p>❌ Fout bij ophalen van event of sessies: " . esc_html($e->getMessage()) . "</p>";
     }
-
-    $user_id = get_current_user_id();
-    $already_registered = false;
-
-    if ($user_id) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'user_event';
-        $already_registered = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
-            $user_id, $calendarId
-        )) > 0;
-}
 
     ob_start();
     ?>
     <div class="event-detail">
-    <h2>Evenement: <?php echo esc_html($calendarId); ?></h2>
-    <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getSummary()); ?></p>
+        <h2>Evenement: <?php echo esc_html($calendar->getSummary()); ?></h2>
+        <p><strong>Agenda-ID:</strong> <?php echo esc_html($calendarId); ?></p>
 
+        <h3>📅 Sessies in dit evenement:</h3>
 
-    <h3>Kies de sessies:</h3>
-    <?php if ($already_registered): ?>
-        <p><strong>✅ Je bent al ingeschreven voor dit evenement.</strong></p>
-    <?php else: ?>
-        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="submit_session_choices">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($calendarId); ?>">
-
-            <?php foreach ($sessions as $session): ?>
-                <label>
-                    <input type="checkbox" name="sessions[]" value="<?php echo esc_attr($session->getId()); ?>">
-                    <?php echo esc_html($session->getSummary()); ?> -
-                    <?php echo esc_html($session->getStart()->getDateTime() ?? $session->getStart()->getDate()); ?>
-                </label><br>
-            <?php endforeach; ?>
-
-            <button type="submit">Bevestig inschrijving</button>
-        </form>
-    <?php endif; ?>
-</div>
-
-
-    <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const url = new URL(window.location.href);
-        if (url.searchParams.get("confirmed") === "1") {
-            alert("✅ Je bent succesvol ingeschreven voor dit evenement!");
-        }
-    });
-    </script>
+        <?php if (empty($sessions)): ?>
+            <p>⚠️ Geen sessies gevonden in deze agenda.</p>
+        <?php else: ?>
+            <ul>
+                <?php foreach ($sessions as $session): ?>
+                    <li style="margin-bottom: 1em;">
+                        <strong><?php echo esc_html($session->getSummary()); ?></strong><br>
+                        📅 Start: <?php echo (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format('d/m/Y H:i'); ?><br>
+                        ⏰ Eind: <?php echo (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format('d/m/Y H:i'); ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+    </div>
     <?php
     return ob_get_clean();
 }
+
 
 add_action('admin_post_submit_session_choices', 'expo_register_event_only');
 
