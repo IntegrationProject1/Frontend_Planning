@@ -95,25 +95,29 @@ function expo_render_events() {
                 const events = data;
                 const container = document.getElementById("expo-events");
                 container.innerHTML = "";
-                events.forEach(event => {
-                    const div = document.createElement("div");
-                    div.className = "event-box";
-                    div.innerHTML = `
-                        <h3>${event.summary}</h3>
-                        <p>${event.description || "Geen beschrijving."}</p>
-                        <p><strong>Start:</strong> ${event.start}</p>
-                        <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
-                            <input type="hidden" name="event_id" value="${event.id}">
-                            <button type="submit">Inschrijven</button>
-                        </form>
-                    `;
-                    container.appendChild(div);
+                events.forEach(calendar => {
+                    calendar.sessions.forEach(session => {
+                        const div = document.createElement("div");
+                        div.className = "event-box";
+                        div.innerHTML = `
+                            <h3>${session.summary}</h3>
+                            <p>${session.description || "Geen beschrijving."}</p>
+                            <p><strong>Start:</strong> ${session.start}</p>
+                            <form method="GET" action="<?php echo site_url('/evenement-detail'); ?>">
+                                <input type="hidden" name="event_id" value="${calendar.calendarId}">
+                                <input type="hidden" name="session_id" value="${session.id}">
+                                <button type="submit">Inschrijven</button>
+                            </form>
+                        `;
+                        container.appendChild(div);
+                    });
                 });
             })
             .catch(err => {
                 console.error("❌ AJAX-verzoek fout:", err);
                 document.getElementById("expo-events").innerHTML = "<p>❌ Technische fout bij ophalen van evenementen.</p>";
             });
+
     });
     </script>
     <?php
@@ -130,10 +134,7 @@ function expo_render_event_detail() {
     $calendarId = sanitize_text_field($_GET['event_id']);
 
     try {
-        $service = get_google_calendar_service();
-        $calendar = $service->calendarList->get($calendarId);
-        $sessions = fetch_all_events_from_calendar($calendarId); // ← sessions uit dit agenda
-
+        $sessions = fetch_all_events_from_calendar($calendarId);
     } catch (Exception $e) {
         return "<p>❌ Kan sessies of kalender niet ophalen: " . esc_html($e->getMessage()) . "</p>";
     }
@@ -146,15 +147,16 @@ function expo_render_event_detail() {
         $table = $wpdb->prefix . 'user_event';
         $already_registered = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM $table WHERE user_id = %d AND event_uuid = %s",
-            $user_id, $eventId
+            $user_id, $calendarId
         )) > 0;
 }
 
     ob_start();
     ?>
     <div class="event-detail">
-    <h2><?php echo esc_html($calendar->getSummary()); ?></h2>
-    <p><strong>Organisator:</strong> <?php echo esc_html($calendar->getId()); ?></p>
+    <h2>Evenement: <?php echo esc_html($calendarId); ?></h2>
+    <p><strong>Organisator:</strong> <?php echo esc_html($calendarId); ?></p>
+
 
     <h3>Kies de sessies:</h3>
     <?php if ($already_registered): ?>
