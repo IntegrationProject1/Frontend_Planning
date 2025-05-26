@@ -159,6 +159,7 @@ function expo_register_event_only() {
 
     $event_uuid = sanitize_text_field($_POST['event_id']);
     $user_id = get_current_user_id();
+    $sessions = isset($_POST['sessions']) ? array_map('sanitize_text_field', $_POST['sessions']) : [];
 
     global $wpdb;
     $table = $wpdb->prefix . 'user_event';
@@ -229,12 +230,67 @@ function expo_register_event_only() {
         $channel->basic_publish($msg, 'event', 'planning.event.update');
         $channel->basic_publish($msg, 'event', 'kassa.event.update');
         $channel->basic_publish($msg, 'event', 'crm.event.update');
-        $channel->close();
-        $connection->close();
+        
 
     } catch (Exception $e) {
         error_log("❌ Fout bij verwerking van event registratie: " . $e->getMessage());
     }
+
+    $session_table = $wpdb->prefix . 'user_session';
+
+    foreach ($sessions as $session_id) {
+        $already = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $session_table WHERE user_id = %d AND session_id = %s",
+            $user_id,
+            $session_id
+        ));
+
+        if (!$already) {
+            $wpdb->insert($session_table, [
+                'user_id' => $user_id,
+                'session_id' => $session_id
+            ]);
+        }
+    }
+
+    foreach ($sessions as $session_id) {
+    try {
+        $session = $service->events->get($event_uuid, $session_id);
+
+        $xml = new SimpleXMLElement('<UpdateSession/>');
+        $xml->addChild('SessionUUID', (new DateTime())->format(DateTime::ATOM));
+        $xml->addChild('EventUUID', $event_uuid);
+        $xml->addChild('SessionName', $session->getSummary());
+        $xml->addChild('SessionDescription', $session->getDescription() ?? '');
+
+        // Optional: guest speakers
+        $guest = $xml->addChild('GuestSpeakers');
+        $guest_speaker = $guest->addChild('GuestSpeaker');
+        $guest_speaker->addChild('email', $session->getCreator()->getEmail() ?? '');
+
+        $xml->addChild('Capacity', 100);
+        $xml->addChild('StartDateTime', (new DateTime($session->getStart()->getDateTime() ?? $session->getStart()->getDate()))->format(DateTime::ATOM));
+        $xml->addChild('EndDateTime', (new DateTime($session->getEnd()->getDateTime() ?? $session->getEnd()->getDate()))->format(DateTime::ATOM));
+        $xml->addChild('SessionLocation', $session->getLocation() ?? 'Onbekende locatie');
+        $xml->addChild('SessionType', 'default');
+
+        $reg = $xml->addChild('RegisteredUsers');
+        $user = $reg->addChild('User');
+        $user->addChild('email', wp_get_current_user()->user_email);
+
+        $msg = new AMQPMessage($xml->asXML(), ['content_type' => 'text/xml']);
+
+        // Publish to both routing keys
+        $channel->basic_publish($msg, 'session', 'planning.session.update');
+        $channel->basic_publish($msg, 'session', 'crm.session.update');
+
+    } catch (Exception $ex) {
+        error_log("❌ Fout bij sessie-verwerking ($session_id): " . $ex->getMessage());
+    }
+}
+
+        $channel->close();
+        $connection->close();
 
     wp_redirect(site_url("/evenementen/?registration=success"));
     exit;
