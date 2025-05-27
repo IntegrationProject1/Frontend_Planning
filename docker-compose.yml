@@ -25,7 +25,7 @@ services:
       - "30010:80"
     environment:
       WORDPRESS_DB_HOST: db
-      WORDPRESS_DEBUG: 1
+      WORDPRESS_DEBUG: 0
       WORDPRESS_DB_USER: ${DB_USER}
       WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
       WORDPRESS_DB_NAME: ${DB_NAME}

@@ -8,33 +8,9 @@
  * @since   Inspiro 1.0.0
  */
 
-add_filter( 'load_textdomain_just_in_time', '__return_false' );
-remove_action( 'init', '_load_textdomain_just_in_time' );
-
-// ----------------------
-// Désactivation des WP-Pointers (bulles d’aide admin)
-// ----------------------
-add_action( 'admin_enqueue_scripts', function() {
-    wp_dequeue_script( 'wp-pointer' );
-    wp_dequeue_style(  'wp-pointer' );
-}, 100 );
-
 if ( ! defined( 'ABSPATH' ) ) {
-    exit; // Exit if accessed directly.
+	exit; // Exit if accessed directly.
 }
-
-/**
- * Charge le textdomain et supprime le lazy‐loader de WP pour éviter la notice.
- */
-add_action( 'after_setup_theme', function() {
-    // Retire l’action lazy-loading introduite en WP 6.7
-    remove_action( 'init', '_load_textdomain_just_in_time' );
-    // Charge les traductions du thème Inspiro
-    load_theme_textdomain(
-        'inspiro',
-        get_template_directory() . '/languages'
-    );
-}, 5 );
 
 /**
  * Define Constants
@@ -49,7 +25,7 @@ define( 'INSPIRO_MARKETING_UTM_CODE_FOOTER_MENU', '?utm_source=wpadmin&utm_mediu
 
 // This theme requires WordPress 5.3 or later.
 if ( version_compare( $GLOBALS['wp_version'], '5.3', '<' ) ) {
-    require INSPIRO_THEME_DIR . 'inc/back-compat.php';
+	require INSPIRO_THEME_DIR . 'inc/back-compat.php';
 }
 
 /**
@@ -112,6 +88,8 @@ require INSPIRO_THEME_DIR . 'inc/template-functions.php';
  */
 require INSPIRO_THEME_DIR . 'inc/wc-custom-functions.php';
 
+
+
 /**
  * Custom template shortcode tags for this theme
  */
@@ -124,8 +102,8 @@ require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-font-family-manager.php';
 require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-fonts-manager.php';
 
 // Include Customizer Guided Tour
-if ( is_admin() ) {
-    require INSPIRO_THEME_DIR . 'inc/classes/inspiro-customizer-guided-tour.php';
+if ( is_admin() ) { // && is_customize_preview(), AJAX don't work with is_customize_preview() included
+	require INSPIRO_THEME_DIR . 'inc/classes/inspiro-customizer-guided-tour.php';
 }
 require INSPIRO_THEME_DIR . 'inc/customizer-functions.php';
 require INSPIRO_THEME_DIR . 'inc/customizer/class-inspiro-customizer-control-base.php';
@@ -140,16 +118,16 @@ require INSPIRO_THEME_DIR . 'inc/icon-functions.php';
  * Theme admin notices and info page
  */
 if ( is_admin() ) {
-    require INSPIRO_THEME_DIR . 'inc/admin-notice.php';
-    require INSPIRO_THEME_DIR . 'inc/admin/admin-api.php';
+	require INSPIRO_THEME_DIR . 'inc/admin-notice.php';
+	require INSPIRO_THEME_DIR . 'inc/admin/admin-api.php';
 
-    // temporary marketing black friday functionality
-    require INSPIRO_THEME_DIR . 'inc/marketing-functions.php';
+	// temporary marketing black friday functionality
+	require INSPIRO_THEME_DIR . 'inc/marketing-functions.php';
 
-    if ( current_user_can( 'manage_options' ) ) {
-        require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notices.php';
-        require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notice-review.php';
-    }
+	if ( current_user_can( 'manage_options' ) ) {
+		require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notices.php';
+		require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notice-review.php';
+	}
 }
 
 /**
