@@ -88,8 +88,6 @@ require INSPIRO_THEME_DIR . 'inc/template-functions.php';
  */
 require INSPIRO_THEME_DIR . 'inc/wc-custom-functions.php';
 
-
-
 /**
  * Custom template shortcode tags for this theme
  */
@@ -102,7 +100,7 @@ require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-font-family-manager.php';
 require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-fonts-manager.php';
 
 // Include Customizer Guided Tour
-if ( is_admin() ) { // && is_customize_preview(), AJAX don't work with is_customize_preview() included
+if ( is_admin() ) {
 	require INSPIRO_THEME_DIR . 'inc/classes/inspiro-customizer-guided-tour.php';
 }
 require INSPIRO_THEME_DIR . 'inc/customizer-functions.php';
@@ -147,5 +145,15 @@ require INSPIRO_THEME_DIR . 'inc/dynamic-css/hero-header-button.php';
 require INSPIRO_THEME_DIR . 'inc/dynamic-css/main-menu.php';
 require INSPIRO_THEME_DIR . 'inc/dynamic-css/mobile-menu.php';
 
-
-
+/**
+ * Charge les fichiers de traduction du thème Inspiro
+ * au hook after_setup_theme pour éviter
+ * la notice “_load_textdomain_just_in_time was called incorrectly”.
+ */
+function inspiro_load_textdomain() {
+	load_theme_textdomain(
+		'inspiro',
+		get_template_directory() . '/languages'
+	);
+}
+add_action( 'after_setup_theme', 'inspiro_load_textdomain' );
