@@ -8,6 +8,9 @@
  * @since   Inspiro 1.0.0
  */
 
+ add_filter( 'load_textdomain_just_in_time', '__return_false' );
+
+
 if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly.
 }
