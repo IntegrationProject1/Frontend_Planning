@@ -13,17 +13,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Charge les fichiers de traduction du thème Inspiro
- * au hook after_setup_theme pour éviter
- * la notice “_load_textdomain_just_in_time was called incorrectly”.
+ * Charge le textdomain et supprime le lazy‐loader de WP pour éviter la notice.
  */
-function inspiro_load_textdomain() {
+add_action( 'after_setup_theme', function() {
+    // Retire l’action lazy-loading introduite en WP 6.7
+    remove_action( 'init', '_load_textdomain_just_in_time' );
+    // Charge les traductions du thème Inspiro
     load_theme_textdomain(
         'inspiro',
         get_template_directory() . '/languages'
     );
-}
-add_action( 'after_setup_theme', 'inspiro_load_textdomain' );
+}, 5 );
 
 /**
  * Define Constants
