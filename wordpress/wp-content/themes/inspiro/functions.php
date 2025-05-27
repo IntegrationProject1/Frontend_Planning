@@ -9,8 +9,21 @@
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
-	exit; // Exit if accessed directly.
+    exit; // Exit if accessed directly.
 }
+
+/**
+ * Charge les fichiers de traduction du thème Inspiro
+ * au hook after_setup_theme pour éviter
+ * la notice “_load_textdomain_just_in_time was called incorrectly”.
+ */
+function inspiro_load_textdomain() {
+    load_theme_textdomain(
+        'inspiro',
+        get_template_directory() . '/languages'
+    );
+}
+add_action( 'after_setup_theme', 'inspiro_load_textdomain' );
 
 /**
  * Define Constants
@@ -25,7 +38,7 @@ define( 'INSPIRO_MARKETING_UTM_CODE_FOOTER_MENU', '?utm_source=wpadmin&utm_mediu
 
 // This theme requires WordPress 5.3 or later.
 if ( version_compare( $GLOBALS['wp_version'], '5.3', '<' ) ) {
-	require INSPIRO_THEME_DIR . 'inc/back-compat.php';
+    require INSPIRO_THEME_DIR . 'inc/back-compat.php';
 }
 
 /**
@@ -101,7 +114,7 @@ require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-fonts-manager.php';
 
 // Include Customizer Guided Tour
 if ( is_admin() ) {
-	require INSPIRO_THEME_DIR . 'inc/classes/inspiro-customizer-guided-tour.php';
+    require INSPIRO_THEME_DIR . 'inc/classes/inspiro-customizer-guided-tour.php';
 }
 require INSPIRO_THEME_DIR . 'inc/customizer-functions.php';
 require INSPIRO_THEME_DIR . 'inc/customizer/class-inspiro-customizer-control-base.php';
@@ -116,16 +129,16 @@ require INSPIRO_THEME_DIR . 'inc/icon-functions.php';
  * Theme admin notices and info page
  */
 if ( is_admin() ) {
-	require INSPIRO_THEME_DIR . 'inc/admin-notice.php';
-	require INSPIRO_THEME_DIR . 'inc/admin/admin-api.php';
+    require INSPIRO_THEME_DIR . 'inc/admin-notice.php';
+    require INSPIRO_THEME_DIR . 'inc/admin/admin-api.php';
 
-	// temporary marketing black friday functionality
-	require INSPIRO_THEME_DIR . 'inc/marketing-functions.php';
+    // temporary marketing black friday functionality
+    require INSPIRO_THEME_DIR . 'inc/marketing-functions.php';
 
-	if ( current_user_can( 'manage_options' ) ) {
-		require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notices.php';
-		require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notice-review.php';
-	}
+    if ( current_user_can( 'manage_options' ) ) {
+        require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notices.php';
+        require INSPIRO_THEME_DIR . 'inc/classes/class-inspiro-notice-review.php';
+    }
 }
 
 /**
@@ -144,16 +157,3 @@ require INSPIRO_THEME_DIR . 'inc/dynamic-css/hero-header-desc.php';
 require INSPIRO_THEME_DIR . 'inc/dynamic-css/hero-header-button.php';
 require INSPIRO_THEME_DIR . 'inc/dynamic-css/main-menu.php';
 require INSPIRO_THEME_DIR . 'inc/dynamic-css/mobile-menu.php';
-
-/**
- * Charge les fichiers de traduction du thème Inspiro
- * au hook after_setup_theme pour éviter
- * la notice “_load_textdomain_just_in_time was called incorrectly”.
- */
-function inspiro_load_textdomain() {
-	load_theme_textdomain(
-		'inspiro',
-		get_template_directory() . '/languages'
-	);
-}
-add_action( 'after_setup_theme', 'inspiro_load_textdomain' );
