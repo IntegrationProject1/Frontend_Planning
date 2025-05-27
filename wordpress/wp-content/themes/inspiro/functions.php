@@ -8,8 +8,16 @@
  * @since   Inspiro 1.0.0
  */
 
- add_filter( 'load_textdomain_just_in_time', '__return_false' );
+add_filter( 'load_textdomain_just_in_time', '__return_false' );
+remove_action( 'init', '_load_textdomain_just_in_time' );
 
+// ----------------------
+// Désactivation des WP-Pointers (bulles d’aide admin)
+// ----------------------
+add_action( 'admin_enqueue_scripts', function() {
+    wp_dequeue_script( 'wp-pointer' );
+    wp_dequeue_style(  'wp-pointer' );
+}, 100 );
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly.
